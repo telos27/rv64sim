@@ -1,0 +1,19 @@
+Add 64-bit support
+	* change all registers and CSRs to 64-bit
+	* bit locations of certain CSR fields
+	* change internal storage like pc, interrupt to be 64-bit
+	* change all instructions to do 64-bit
+	* add 32-bit instructions: 
+		* register
+		* imm 
+		* load/store
+		* M: trap for most instructions?
+		* AMO
+	* change Sv32 to Sv39
+	* timer -> 64 bits
+	** PLIC CSR size and R/W size
+
+Reorganize code
+	* cpu
+	* SoC
+	* simulator/driver
