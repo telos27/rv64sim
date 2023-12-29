@@ -1,4 +1,5 @@
 ﻿#include <stdint.h>
+#include <inttypes.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -160,7 +161,7 @@ unsigned int wfi = 0;    // WFI flag
 uint64_t no_cycles; // execution cycles; currently always 1 cycle/instruction
 
 static unsigned int trace = 0;  // trace every instruction
-static unsigned int interrupt;  // interrupt type
+static uint64_t interrupt;  // interrupt type
 
 
 // read register
@@ -270,7 +271,8 @@ int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data,
     assert(addr >= INITIAL_PC);
     // TODO: PMP & PMA checks 
     addr -= INITIAL_PC;
-    assert(size == MEM_BYTE || size == MEM_HALFWORD || size == MEM_WORD || size==MEM_UBYTE || size==MEM_UHALFWORD);
+    assert(size == MEM_BYTE || size == MEM_HALFWORD || size == MEM_WORD || size==MEM_DWORD ||
+            size==MEM_UBYTE || size==MEM_UHALFWORD || size==MEM_UWORD);
     if (mem_mode == MEM_WRITE) {
         switch (size) {
         case MEM_BYTE:
@@ -332,6 +334,7 @@ int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data,
 // include memory-mapped I/O in specificed address range, which goes through MMU as well
 // NOTE: little-endian
 // TODO: mstatus.mprv
+// TODO: cleaner logic for mem I/O vs real memory
 int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
 {
     // address translation here ;
@@ -343,7 +346,11 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
         if (interrupt!=0xffffffffffffffff) return -1;
     }
     if (mem_mode==MEM_WRITE) {
-        if (addr >= MEMIO_START && addr < MEMIO_END) {
+        if (addr >= MEMIO_START && addr < MEMIO_END ||
+            addr >= IO_CLINT_START && addr<IO_CLINT_END ||
+            addr >= IO_UART_START && addr < IO_UART_END ||
+            addr >= IO_PLIC_START && addr < IO_PLIC_END ||
+            addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
             return io_write(addr, data);
         }
         else {
@@ -352,7 +359,11 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
     } else {    // both instruction and data read
         uint64_t read_data;
         int result;
-        if (addr >= MEMIO_START && addr < MEMIO_END) {
+        if (addr >= MEMIO_START && addr < MEMIO_END ||
+            addr >= IO_CLINT_START && addr < IO_CLINT_END ||
+            addr >= IO_UART_START && addr < IO_UART_END ||
+            addr >= IO_PLIC_START && addr < IO_PLIC_END ||
+            addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
             result = io_read(addr, &read_data) ;  // TODO: what do we do about non-word-sized I/O？
         }
         else {
@@ -375,6 +386,7 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
             case MEM_UBYTE:
             case MEM_UHALFWORD:
             case MEM_UWORD:
+            case MEM_DWORD:
                 *data = read_data ;
                 break ;
             default: 
@@ -414,10 +426,9 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
             write_reg(rd, read_reg(rs1) << (read_reg(rs2) & 0x3f));
             break;
         case ALU_SRL:
-            if (sub7 == NORMAL) {
+            if ((sub7&0xfe) == NORMAL) {
                 write_reg(rd, read_reg(rs1) >> (read_reg(rs2) & 0x3f));
-            }
-            else if (sub7 == SRA) {
+            } else if ((sub7&0xfe) == SRA) {
                 // signed right shift
                 write_reg(rd, ((int64_t)read_reg(rs1)) >> (read_reg(rs2) & 0x3f));
             }
@@ -480,15 +491,15 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
             }
             break;
         case ALU_SLL:
-            write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) << (read_reg(rs2) & 0x3f)));
+            write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) << (read_reg(rs2) & 0x1f)));
             break;
         case ALU_SRL:
             if (sub7 == NORMAL) {
-                write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) >> (read_reg(rs2) & 0x3f)));
+                write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) >> (read_reg(rs2) & 0x1f)));
             }
             else if (sub7 == SRA) {
                 // signed right shift
-                write_reg(rd, (int64_t)(((int32_t)read_reg(rs1)) >> (read_reg(rs2) & 0x3f)));
+                write_reg(rd, (int64_t)(((int32_t)read_reg(rs1)) >> (read_reg(rs2) & 0x1f)));
             }
             else {
                 interrupt = INT_ILLEGAL_INSTR;  // nonexistent sub7
@@ -499,8 +510,8 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
     }
     else { // MULDIV
         // NOTE: signedness, special cases for division/remainder of certain numbers
-        uint32_t n1 = read_reg(rs1);
-        uint32_t n2 = read_reg(rs2);
+        uint32_t n1 = (uint32_t) read_reg(rs1);
+        uint32_t n2 = (uint32_t) read_reg(rs2);
         uint32_t result = 0;
         switch (sub3) {
         case MUL: result = n1 * n2; break;
@@ -530,10 +541,10 @@ int imm_op(int rd , int rs1 , int sub3 , int sub7 , unsigned int imm)
     case ALU_AND: write_reg(rd, read_reg(rs1) & imm); break;
     case ALU_SLL: write_reg(rd, read_reg(rs1) << (imm & 0x3f)); break;
     case ALU_SRL:
-        if (sub7 == NORMAL) {
+        if ((sub7&0xfe) == NORMAL) {
             write_reg(rd, read_reg(rs1) >> (imm & 0x3f));
         }
-        else if (sub7 == SRA) {
+        else if ((sub7&0xfe) == SRA) {
             // signed right shift
             write_reg(rd, ((int64_t)read_reg(rs1)) >> (imm & 0x3f));
         }
@@ -559,14 +570,14 @@ int imm32_op(int rd, int rs1, int sub3, int sub7, unsigned int imm)
 {
     switch (sub3) {
     case ALU_ADD: write_reg(rd, (int64_t)((int32_t)read_reg(rs1) + (int32_t)imm)); break;
-    case ALU_SLL: write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) << (imm & 0x3f))); break;
+    case ALU_SLL: write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) << (imm & 0x1f))); break;
     case ALU_SRL:
         if (sub7 == NORMAL) {
-            write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) >> (imm & 0x3f)));
+            write_reg(rd, (int64_t)((uint32_t)read_reg(rs1) >> (imm & 0x1f)));
         }
         else if (sub7 == SRA) {
             // signed right shift
-            write_reg(rd, (int64_t)((int32_t)read_reg(rs1)) >> (imm & 0x3f));
+            write_reg(rd, (int64_t)((int32_t)read_reg(rs1)) >> (imm & 0x1f));
         }
         else {
             interrupt = INT_ILLEGAL_INSTR; // nonexistent sub7
@@ -615,7 +626,7 @@ int64_t branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned in
 }
 
 // JAL opcode: returns next PC
-int jal_op(int rd, unsigned int imm)
+uint64_t jal_op(int rd, unsigned int imm)
 {
     write_reg(rd, pc + 4);
     // NOTE: bit position, add 0 bit , sign extend
@@ -627,7 +638,7 @@ int jal_op(int rd, unsigned int imm)
 
 
 // JALR opcode: returns next PC
-int jalr_op(int rd, int rs1, unsigned int imm12)
+uint64_t jalr_op(int rd, int rs1, unsigned int imm12)
 {
     // NOTE: write register afterwards, rd could be same as rs1
     uint64_t saved_pc = pc + 4;
@@ -648,7 +659,7 @@ int auipc_op(int rd, unsigned int imm20)
 // LUI opcode
 int lui_op(int rd, unsigned int imm20)
 {
-    write_reg(rd, imm20 << 12);
+    write_reg(rd, sign_extend(imm20 << 12 , 32));
     return 0;
 }
 
@@ -677,7 +688,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             // mie = mpie ; mpie=1 ; mpp = mode
             write_CSR(CSR_MSTATUS, (prev_mode << 11) | CSR_MSTATUS_MPIE | ((mstatus & CSR_MSTATUS_MPIE) >> 4));
             uint64_t next_pc = read_CSR(CSR_MEPC);
-            // printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
+    //        printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
             return next_pc;
         }
         case ECALL_SRET: {
@@ -708,6 +719,9 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
         if (rd != 0) {
             write_reg(rd, read_CSR(imm12));
         }
+        uint64_t time;
+        io_read(IO_CLINT_TIMERL, &time);
+        //printf("%ld:CSRRW@0x%lx ,  [0x%x]=0x%x , prev=0x%x\n", time , pc , imm12, new_value , regs[rd]);
         write_CSR(imm12, new_value);
         break;
     }
@@ -813,14 +827,15 @@ void atomic_op(int sub7 , int rd , int rs1 , int rs2)
 void atomic32_op(int sub7, int rd, int rs1, int rs2)
 {
     uint32_t data, data2;
-    uint64_t addr;
+    uint64_t addr , mem_data;
 
     int lrsc = (sub7 & 0x8);    //bit 28 (bit 3 of sub7) covers both instructions ;
 
     // NOTE: register access order critical as rd&rs1 can be the same register
     addr = read_reg(rs1);   // memory address
     if (!lrsc) {
-        rw_memory(MEM_READ, addr, MEM_WORD, &data);    // one piece of data in memory 
+        rw_memory(MEM_READ, addr, MEM_WORD, &mem_data);    // one piece of data in memory 
+        data = (uint32_t)mem_data;
         data2 = read_reg(rs2);  // the other piece in register
     }
 
@@ -831,7 +846,8 @@ void atomic32_op(int sub7, int rd, int rs1, int rs2)
         case AMO_ADD_SWAP: break;
         case AMO_ADD_LR: {
             reservation = addr >> 3;
-            rw_memory(MEM_READ, addr, MEM_WORD, &data);
+            rw_memory(MEM_READ, addr, MEM_WORD, &mem_data);
+            data = (uint32_t)mem_data;
             write_reg(rd, (int64_t)(int32_t)data);
             break;
         }
@@ -839,7 +855,8 @@ void atomic32_op(int sub7, int rd, int rs1, int rs2)
             // TODO: mix of 32-bit and 64-bit LR/SC?
             if (reservation == (addr >> 3)) {    // check to see if lr & sc match on address, i.e. reservation still there
                 data = (int32_t) read_reg(rs2);
-                rw_memory(MEM_WRITE, addr, MEM_WORD, &data);
+                mem_data = data;
+                rw_memory(MEM_WRITE, addr, MEM_WORD, &mem_data);
                 write_reg(rd, 0);
                 reservation = 0;
             }
@@ -861,7 +878,8 @@ void atomic32_op(int sub7, int rd, int rs1, int rs2)
 
     if (!lrsc) {
         // after arithmetic operation, update memory and register
-        rw_memory(MEM_WRITE, addr, MEM_WORD, &data2);
+        mem_data = data2;
+        rw_memory(MEM_WRITE, addr, MEM_WORD, &mem_data);
         write_reg(rd, (int64_t)(int32_t)data);
     }
 }
@@ -874,7 +892,9 @@ uint64_t execute_one_instruction()
     uint64_t mem_data;
 
     // fetch instruction 
-    rw_memory(MEM_INSTR, pc, MEM_WORD, &instr);
+    rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
+    instr = (uint32_t) mem_data;
+//    printf("pc=0x%lx , instr=0x%x\n", pc, instr);
 
     // decode instruction
     opcode = (instr & OPCODE_MASK) >> OPCODE_SHIFT;
@@ -946,7 +966,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_MEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_M; // switch to M mode ;
         result = read_CSR(CSR_MTVEC);  // jump to interrupt routine, no vectoring support yet
- //       printf("[time=0x%usus]M INTR: pc=%x , interrupt=%x , next=%x\n", (uint64_t)get_microseconds() , pc, interrupt, result);
+   //     printf("[time=0x%lxus]M INTR: pc=%lx , interrupt=%"PRIx64", next = % lx\n", (uint64_t)get_microseconds() , pc, interrupt, result);
     }
     else {  // trap to S mode
         write_CSR(CSR_SCAUSE, interrupt);
@@ -956,7 +976,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_S; // switch to M mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet
-        printf("[time=0x%usus]S INTR: pc=%x , interrupt=%x , next=%x\n", (uint64_t)get_microseconds() , pc, interrupt, result);
+        printf("[time=0x%lxus]S INTR: pc=%lx , interrupt=%lx , next=%lx\n", (uint64_t)get_microseconds() , pc, interrupt, result);
     }
     return result;
 }
@@ -1000,4 +1020,5 @@ int init_cpu(uint64_t start_pc)
     pc = start_pc ;
     mode = MODE_M; // Machine-mode.
     no_cycles = 0;
+    return 0;
 }

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 
 #include "cpu.h"
 #include "soc.h"
@@ -12,15 +13,20 @@ static uint64_t dtb_offset;    // offset to DTB
 // takes two optional argument: machine code file name & dtb file name
 int main(int argc, char** argv)
 {
-    load_code((argc <= 1) ? DEFAULT_FILE : argv[1]);
-    if (argc >= 2) load_dtb(argv[2]);
-
     init_soc();
-    init_cpu();
+    init_cpu(INITIAL_PC);
 
-    // a10 and a11 needed for Linux
-    write_reg(10, 0x0); // hart ID
-    write_reg(11, dtb_offset + INITIAL_PC); // DTB address in memory
+    load_code((argc <= 1) ? DEFAULT_FILE : argv[1]);
+    if (argc >= 2) {
+        load_dtb_or_fs(argv[2]);
+    }
+
+
+    if (dtb_offset > 0) {
+                    // a10 and a11 needed for Linux
+        write_reg(10, 0x0); // hart ID
+        write_reg(11, dtb_offset + INITIAL_PC); // DTB address in memory
+    }
 
     execute_code();
 }
@@ -43,29 +49,48 @@ int load_code(char* file_name)
 
     fseek(f, 0, SEEK_END);
     len = ftell(f);
+   
     rewind(f);
+
+    // HACK:
+    if (strcmp(file_name, "kernel") == 0) {
+        fseek(f, 4096, SEEK_CUR);
+        len -= 4096;
+    }
+   
     fread(p, len, 1, f);
+
+    // HACK: bss
+    // memset(mem + 0xa890, 0, 0x194b0);
+
     fclose(f);
 
     return 1;
 }
 
 // load DTB file
-int load_dtb(char* file_name)
+int load_dtb_or_fs(char* file_name)
 {
     FILE* f = fopen(file_name, "rb");
     if (!f || ferror(f))
     {
-        fprintf(stderr, "Error: DTB file \"%s\" not found\n", file_name);
+        fprintf(stderr, "Error: DTB/FS file \"%s\" not found\n", file_name);
         return -5;
     }
     fseek(f, 0, SEEK_END);
-    long dtblen = ftell(f);
+    long len = ftell(f);
+    unsigned char* dest = 0;
     fseek(f, 0, SEEK_SET);
-    dtb_offset = MEMSIZE - dtblen;  // do we need to store core structure in memory?
-    if (fread(mem + dtb_offset, dtblen, 1, f) != 1)
+    if (strstr(file_name, "dtb")) { // dtb file
+        dtb_offset = MEMSIZE - len;  // do we need to store core structure in memory?
+        dest = mem + dtb_offset;
+    }
+    else {    // fs.img
+        dest = vio_disk;
+    }
+    if (fread(dest, len, 1, f) != 1)
     {
-        fprintf(stderr, "Error: Could not open dtb \"%s\"\n", file_name);
+        fprintf(stderr, "Error: Could not read dtb/fs \"%s\"\n", file_name);
         return -9;
     }
     fclose(f);

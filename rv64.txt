@@ -11,9 +11,44 @@ Add 64-bit support
 		* AMO
 	* change Sv32 to Sv39
 	* timer -> 64 bits
-	** PLIC CSR size and R/W size
+	* PLIC CSR size and R/W size
+		* 32-bit R/W, walk through code to make sure that it's ok
+		* should run, but more checking would be good, 32-bit access for PLIC and virtio, 8-bit access for UART
+	** add S-level interrupt handling? SIP?
+
 
 Reorganize code
 	* cpu
 	* SoC
 	* simulator/driver
+
+Current status:
+	* code completed, builds, needs more cleanup
+	* xv6 works on Ubuntu qemu, it has a nice assembly listing
+	* a lot of testing needed
+	* default build has C instructions, need to change Makefile, build with -march=rv64g
+	* got the build fixed
+	* hacked around the kernel image issue, now it's up and running
+	* fixed some obvious issues
+	* now stuck in printf uartoutput, somehow it thinks the kernel paniced?
+	* need to figure out why it's stuck: printf(), consputc(), uartputc_sync()
+	* related to image loading? bss segment.
+	* hacked around it, now at least it can print out a message and then panic in kfree (address has a pa[32]==1, not right)
+	* lui needs to sign extend in 64-bit version
+	* now it crashes in 0x80007f28, timervec; probably something wrong with the interrupt handling
+	* using an xv6 image produced using objcopy, it crashes in the same address but with a different address
+	* traced and it's a double-timer call, timer interrupt while in a timer interrupt
+	* srli decode was giving an error since 6-bit shift amount results in only 6-bit sub7
+	* fixed, now it just runs forever
+	* hasn't reached VM yet
+	* false alarm due to my conditional breakpoints
+	* now past kinit(), but memory error when in timervec again, it looks mscratch got messed up again
+	* still a problem with SRL, fixed now
+	* now panic in kvmmap, looks like panic when setting up the page tables
+
+
+
+Usage scenarioes:
+1. simple machine code
+2. Linux image plus dtb
+3. xv6 image plus file system

@@ -70,8 +70,13 @@
 
 // MEMIO addresses
 // on real systems these would be actual devices
-#define IO_CLINT_TIMERL 0x1100bff8
-#define IO_CLINT_TIMERMATCHL 0x11004000
+// HACK: clint address different from default Linux dtb, change for xv6 first
+#define IO_CLINT_START 0x02004000
+#define IO_CLINT_END   0x0200c000
+#define IO_CLINT_TIMERL 0x0200bff8
+#define IO_CLINT_TIMERMATCHL 0x02004000
+#define IO_UART_START 0x10000000
+#define IO_UART_END   0x10000007
 #define IO_UART_DATA       0x10000000
 #define IO_UART_INTRENABLE 0x10000001
 #define IO_UART_FIFOCTRL   0x10000002
@@ -91,7 +96,8 @@
 #define PLIC_THRESHOLD 0x0c201000
 #define PLIC_CLAIM 0x0c201004
 
-#define VIRTIO_START 0x10001000
+#define IO_VIRTIO_START 0x10001000
+#define IO_VIRTIO_END   0x10001074
 // offsets
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h
@@ -119,6 +125,7 @@
 
 // part of CPU state
 extern uint32_t wfi;
+extern uint8_t* vio_disk;
 
 uint32_t io_read(uint64_t addr, uint64_t* data);
 uint32_t io_write(uint64_t addr, uint64_t* data);

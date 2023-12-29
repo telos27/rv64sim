@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <conio.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <assert.h>
 
 #include "soc.h"
@@ -55,7 +56,7 @@ void debug_syscall()
 
 
 
-uint32_t plic_read(uint32_t addr, uint32_t* data)
+uint32_t plic_read(uint64_t addr, uint64_t* data)
 {
 	if (addr >= PLIC_PRIORITY_START && addr < PLIC_PRIORITY_END) {
 		*data = plic_priority[addr - PLIC_PRIORITY_START];
@@ -77,18 +78,18 @@ uint32_t plic_read(uint32_t addr, uint32_t* data)
 }
 
 
-uint32_t plic_write(uint32_t addr, uint32_t* data)
+uint32_t plic_write(uint64_t addr, uint64_t* data)
 {
 	if (addr >= PLIC_PRIORITY_START && addr < PLIC_PRIORITY_END) {
-		plic_priority[addr - PLIC_PRIORITY_START] = *data;
+		plic_priority[addr - PLIC_PRIORITY_START] = (uint32_t) *data;
 	}
 	else if (addr >= PLIC_PENDING_START && addr < PLIC_PENDING_END) {
-		plic_pending[addr - PLIC_PENDING_START] = *data;
+		plic_pending[addr - PLIC_PENDING_START] = (uint32_t) *data;
 	} if (addr >= PLIC_ENABLE_START && addr < PLIC_ENABLE_END) {
-		plic_enable[addr - PLIC_ENABLE_START] = *data ;
+		plic_enable[addr - PLIC_ENABLE_START] = (uint32_t)*data ;
 	}
 	else if (addr == PLIC_THRESHOLD) {
-		plic_threshold = *data;
+		plic_threshold = (uint32_t)*data;
 	}
 	else if (addr == PLIC_CLAIM) {
 		// clear corresponding pending bit
@@ -135,7 +136,7 @@ static uint32_t vio_queue_align;
 static uint32_t vio_status;
 static uint32_t vio_queue_notify = UINT32_MAX;
 static uint32_t vio_used_idx;	// matches virtq.used.idx
-static uint8_t* vio_disk;	// disk space, allocated in init
+uint8_t* vio_disk;	// disk space, allocated in init
 
 uint32_t init_vio()
 {
@@ -145,7 +146,7 @@ uint32_t init_vio()
 
 uint32_t vio_read(uint64_t addr, uint64_t* data)
 {
-	uint32_t offset = addr - VIRTIO_START;
+	uint32_t offset = addr - IO_VIRTIO_START;
 	switch (offset) {
 	case VIRTIO_MAGIC_VALUE: *data = 0x74726976b; break;
 	case VIRTIO_VERSION: *data = 0x1; break;
@@ -160,19 +161,19 @@ uint32_t vio_read(uint64_t addr, uint64_t* data)
 
 uint32_t vio_write(uint64_t addr, uint64_t* data)
 {
-	uint32_t offset = addr - VIRTIO_START;
+	uint32_t offset = addr - IO_VIRTIO_START;
 	switch (offset) {
 	case VIRTIO_STATUS: {
-		vio_status = *data;	// vs. rvemu; I don't think needed for xv6
+		vio_status = (uint32_t) *data;	// vs. rvemu; I don't think needed for xv6
 		break;
 	}
 	case VIRTIO_DRIVER_FEATURES: break;	// appears unused
-	case VIRTIO_GUEST_PAGE_SIZE: vio_page_size = *data; break;
+	case VIRTIO_GUEST_PAGE_SIZE: vio_page_size = (uint32_t)*data; break;
 	case VIRTIO_QUEUE_SEL: assert(*data == 0); break;	// only single queue
-	case VIRTIO_QUEUE_NUM: vio_queue_num = *data; break;
-	case VIRTIO_QUEUE_ALIGN: vio_queue_align = *data; break;
-	case VIRTIO_QUEUE_PFN: vio_pfn = *data; break;
-	case VIRTIO_QUEUE_NOTIFY: vio_queue_notify = *data; break;	
+	case VIRTIO_QUEUE_NUM: vio_queue_num = (uint32_t)*data; break;
+	case VIRTIO_QUEUE_ALIGN: vio_queue_align = (uint32_t)*data; break;
+	case VIRTIO_QUEUE_PFN: vio_pfn = (uint32_t)*data; break;	// could be more than 32-bit?
+	case VIRTIO_QUEUE_NOTIFY: vio_queue_notify = (uint32_t)*data; break;
 	default: assert(0);		// unsupported I/O register
 	}
 }
@@ -266,8 +267,12 @@ uint32_t io_read(uint64_t addr, uint64_t *data)
 	if (addr >= IO_PLIC_START && addr < IO_PLIC_END) {
 		return plic_read(addr, data);
 	}
+	if (addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
+		return vio_read(addr, data);
+	}
 	switch (addr) {
 		case IO_CLINT_TIMERL: *data = timer; break;
+		case IO_CLINT_TIMERMATCHL: *data = timer_match; break;
 		// emulate UART behavior
 		case IO_UART_DATA: *data = IsKBHit() ? ReadKBByte() : 0; break;
 		case IO_UART_INTRENABLE: *data = uart_interrupt; break;  // should not be readable, but Linux seems to read it
@@ -286,6 +291,9 @@ uint32_t io_write(uint64_t addr, uint64_t* data)
 {
 	if (addr >= IO_PLIC_START && addr < IO_PLIC_END) {
 		return plic_write(addr, data);
+	}
+	if (addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
+		return vio_write(addr, data);
 	}
 	switch (addr) {
 	//	case IO_CLINT_TIMERL: timer_l = *data; break;
@@ -391,6 +399,7 @@ uint32_t run_clint()
 	// update timer based on the current time
 	elapsed_time = get_microseconds() - last_time;	
 	timer += elapsed_time;
+//	printf("timer=%ld\n", timer);
 
 	// compare timer and set interrupt pending info
 	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 

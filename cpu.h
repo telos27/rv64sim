@@ -16,13 +16,13 @@
 #define MEM_WRITE 3
 
 
-// usable memory size: 64M
-#define MEMSIZE 64*1024*1024 
+// usable memory size: 256M
+#define MEMSIZE 256*1024*1024 
 
 extern uint64_t pc;
 extern uint64_t no_cycles;
 extern uint8_t mem[];   // main memory
 
-
+extern int init_cpu(uint64_t start_pc);
 extern int pa_mem_interface(uint32_t mem_mode, unsigned int addr, int size, unsigned int* data);
 
