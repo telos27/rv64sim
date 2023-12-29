@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/kernel.asm
+/image.xv6
+/fs.img
+/kernel
