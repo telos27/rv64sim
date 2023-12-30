@@ -45,6 +45,22 @@ Current status:
 	* now past kinit(), but memory error when in timervec again, it looks mscratch got messed up again
 	* still a problem with SRL, fixed now
 	* now panic in kvmmap, looks like panic when setting up the page tables
+	* problem in allocating page table for kernel code, the size is incorrect
+	* that was stupid, same issue with auipc, need to extend to 64-bit
+	* now crashes in plicinit, some issue with I/O address
+	* stupid typos with if then else if ...
+	* now panic in virtio, not the values it expects, easy to fix
+	* accessing some unimplemented I/O registers 0x70, a bunch of easy fixes
+	* now a slightly harder one: the ring structures are updated to the new version, I need to modify to match
+	* at least now it passes the virtio init
+	* now crashes at forkret(), first process' scheduling?
+	* sp seems wrong at 0x3_ffff_dff0; VA, could be my MMU bug
+	* fixed a few more bugs, but page table still seems wrong
+	* with MMU active, now it crashes after kvminit
+	* A&D bits not updated?  commented it out for now
+	* now crash in virtio, fixed an uninitialized variable bug
+	* now it just hangs, could be the lack of timer
+	* should go through the entire interrupt logic
 
 
 

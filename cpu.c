@@ -134,7 +134,7 @@
 #define PTE_G 0x20
 #define PTE_A 0x40
 #define PTE_D 0x80
-#define PTE_PPN 0x3ffffffffffc000
+#define PTE_PPN 0x3ffffffffffc00
 
 
 #define BOOL int8_t
@@ -216,8 +216,8 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
     {
         uint64_t pte;
 
-        pa_mem_interface(MEM_READ, ppn << 12 | (vpn_segment[i]>>(9*i)), MEM_DWORD, &pte, interrupt);	// physical address, no translation
-        if (*interrupt != 0xffffffff) return 0;
+        pa_mem_interface(MEM_READ, (ppn << 12) | ((vpn_segment[i]>>(9*(PTE_LEVELS-i-1)))<<3), MEM_DWORD, &pte, interrupt);	// physical address, no translation
+        if (*interrupt != 0xffffffffffffffff) return 0;
 
         if ((pte & PTE_V) == 0 || ((pte & PTE_W) && !(pte & PTE_R))) {
             *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;	// invalid PTE or RW reserved combination
@@ -225,23 +225,25 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
         }
 
         if (pte & PTE_R || pte & PTE_X) { // leaf pte
-            uint64_t result = pte & PTE_PPN;
+            uint64_t result = (pte & PTE_PPN)>>10 ;
             // check U & SUM & MXR
 
             // check superpage alignment: the last segment of the PPN should all be 0
             // need to loop for longer VPN
-            if (((i == 0) && ((result & VPN_SEG2) != 0) || (result & VPN_SEG3 != 0)) || 
+            if (((i == 0) && (((result & VPN_SEG2) != 0) || (result & VPN_SEG3 != 0))) || 
                 ((i==1) && ((result & VPN_SEG3) !=0))) {
                 *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
                 return 0;
             }
 
+            /* TODO: no need to check? 
             // A or D bit doesn't match
             if ((pte & PTE_A) == 0 || (mem_access_mode == MEM_WRITE && ((pte & PTE_D) == 0))) {
                 //or ACCESS if pte PMP/PMA
                 *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
                 return 0;
             }
+            */
             else {
                 // TODO: handle A&D update; set A, set D if write; should not update for xv6?
                 if (i == 0) {	// gigapage: use segment1 from VPN
@@ -254,7 +256,7 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
             }
         }
         else {
-            ppn = pte & PTE_PPN;		// next-level PTE; should be good enough?
+            ppn = (pte & PTE_PPN)>>10;		// next-level PTE; should be good enough?
         }
     }
     // TODO: how to avoid two addr translations for a single AMO? should be correct even if we don't do anything? but should optimize
@@ -341,7 +343,7 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
     uint64_t satp = read_CSR(CSR_SATP);
 
     // TODO: trap for other modes
-    if (mode!=MODE_M && ((satp & CSR_SATP_MODE)>>60 == CSR_SATP_MODE_SV39)) {
+    if (mode!=MODE_M && ((satp>>60) == CSR_SATP_MODE_SV39)) {
         addr = (vpn2ppn(addr>>12 , mem_mode , &interrupt) << 12) | (addr & 0xfff);  // 56 bit pa
         if (interrupt!=0xffffffffffffffff) return -1;
     }
@@ -652,7 +654,7 @@ uint64_t jalr_op(int rd, int rs1, unsigned int imm12)
 // AUIPC opcode
 int auipc_op(int rd, unsigned int imm20)
 {
-    write_reg(rd, pc + (imm20 << 12));
+    write_reg(rd, pc + sign_extend(imm20 << 12 , 32));
     return 0;
 }
 
@@ -890,6 +892,8 @@ uint64_t execute_one_instruction()
     uint32_t instr , opcode, sub3, sub7, rs1, rs2, rd, imm12, imm5, imm7, imm20;
     int64_t next_pc = -1;
     uint64_t mem_data;
+
+ //   if (pc == 0x800017c4) DebugBreak();
 
     // fetch instruction 
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);

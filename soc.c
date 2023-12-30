@@ -60,19 +60,15 @@ uint32_t plic_read(uint64_t addr, uint64_t* data)
 {
 	if (addr >= PLIC_PRIORITY_START && addr < PLIC_PRIORITY_END) {
 		*data = plic_priority[addr - PLIC_PRIORITY_START];
-	}
-	else if (addr >= PLIC_PENDING_START && addr < PLIC_PENDING_END) {
+	} else if (addr >= PLIC_PENDING_START && addr < PLIC_PENDING_END) {
 		*data = plic_pending[addr - PLIC_PENDING_START];
-	} if (addr >= PLIC_ENABLE_START && addr < PLIC_ENABLE_END) {
+	} else if (addr >= PLIC_ENABLE_START && addr < PLIC_ENABLE_END) {
 		*data = plic_enable[addr - PLIC_ENABLE_START];
-	}
-	else if (addr == PLIC_THRESHOLD) {
+	} else if (addr == PLIC_THRESHOLD) {
 		*data = plic_threshold;
-	}
-	else if (addr == PLIC_CLAIM) {
+	} else if (addr == PLIC_CLAIM) {
 		*data = plic_claim;
-	}
-	else {
+	} else {
 		assert(0);
 	}
 }
@@ -82,23 +78,19 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 {
 	if (addr >= PLIC_PRIORITY_START && addr < PLIC_PRIORITY_END) {
 		plic_priority[addr - PLIC_PRIORITY_START] = (uint32_t) *data;
-	}
-	else if (addr >= PLIC_PENDING_START && addr < PLIC_PENDING_END) {
+	} else if (addr >= PLIC_PENDING_START && addr < PLIC_PENDING_END) {
 		plic_pending[addr - PLIC_PENDING_START] = (uint32_t) *data;
-	} if (addr >= PLIC_ENABLE_START && addr < PLIC_ENABLE_END) {
+	} else if (addr >= PLIC_ENABLE_START && addr < PLIC_ENABLE_END) {
 		plic_enable[addr - PLIC_ENABLE_START] = (uint32_t)*data ;
-	}
-	else if (addr == PLIC_THRESHOLD) {
+	} else if (addr == PLIC_THRESHOLD) {
 		plic_threshold = (uint32_t)*data;
-	}
-	else if (addr == PLIC_CLAIM) {
+	} else if (addr == PLIC_CLAIM) {
 		// clear corresponding pending bit
 		uint32_t* p = plic_pending[*data >> 5];
 		*p &= ~(1 << (*data & 0x1f));
 
 		plic_claim = 0 ;		// TODO: should be next pending interrupt? current way only works if there is single pending interrupt
-	}
-	else {
+	} else {
 		assert(0);
 	}
 
@@ -129,13 +121,13 @@ uint32_t run_plic()
 #define VRING_DESC_F_NEXT  1 // chained with another descriptor
 #define VRING_DESC_F_WRITE 2 // device writes (vs read)
 
-static uint32_t vio_page_size;
 static uint32_t vio_queue_num;
-static uint32_t vio_pfn;
+static uint64_t vio_queue_desc, vio_driver_desc, vio_device_desc;
 static uint32_t vio_queue_align;
 static uint32_t vio_status;
 static uint32_t vio_queue_notify = UINT32_MAX;
-static uint32_t vio_used_idx;	// matches virtq.used.idx
+static uint32_t vio_queue_ready;
+static uint64_t vio_used_idx;	// matches virtq.used.idx
 uint8_t* vio_disk;	// disk space, allocated in init
 
 uint32_t init_vio()
@@ -148,12 +140,14 @@ uint32_t vio_read(uint64_t addr, uint64_t* data)
 {
 	uint32_t offset = addr - IO_VIRTIO_START;
 	switch (offset) {
-	case VIRTIO_MAGIC_VALUE: *data = 0x74726976b; break;
-	case VIRTIO_VERSION: *data = 0x1; break;
+	case VIRTIO_STATUS: *data = vio_status; break;
+	case VIRTIO_MAGIC_VALUE: *data = 0x74726976; break;
+	case VIRTIO_VERSION: *data = 0x2; break;	// to make xv6 happy
 	case VIRTIO_DEVICE_ID: *data = 0x2; break;
 	case VIRTIO_VENDOR_ID: *data = 0x554d4551; break;
 	case VIRTIO_DEVICE_FEATURES: *data = 0; break;	// appears unused
 	case VIRTIO_QUEUE_NUM_MAX: *data = VIO_QUEUE_SIZE; break;
+	case VIRTIO_QUEUE_READY: *data = vio_queue_ready; break;
 	default: assert(0);		// unsupported I/O register
 	}
 }
@@ -168,11 +162,16 @@ uint32_t vio_write(uint64_t addr, uint64_t* data)
 		break;
 	}
 	case VIRTIO_DRIVER_FEATURES: break;	// appears unused
-	case VIRTIO_GUEST_PAGE_SIZE: vio_page_size = (uint32_t)*data; break;
 	case VIRTIO_QUEUE_SEL: assert(*data == 0); break;	// only single queue
 	case VIRTIO_QUEUE_NUM: vio_queue_num = (uint32_t)*data; break;
 	case VIRTIO_QUEUE_ALIGN: vio_queue_align = (uint32_t)*data; break;
-	case VIRTIO_QUEUE_PFN: vio_pfn = (uint32_t)*data; break;	// could be more than 32-bit?
+	case VIRTIO_QUEUE_DESC_LOW: vio_queue_desc = (vio_queue_desc & 0xffffffff00000000) | *data; break;
+	case VIRTIO_QUEUE_DESC_HIGH: vio_queue_desc = (vio_queue_desc & 0xffffffff) | (*data << 32); break;
+	case VIRTIO_DRIVER_DESC_LOW: vio_driver_desc = (vio_driver_desc & 0xffffffff00000000) | *data; break;
+	case VIRTIO_DRIVER_DESC_HIGH: vio_driver_desc = (vio_driver_desc & 0xffffffff) | (*data << 32); break;	
+	case VIRTIO_DEVICE_DESC_LOW: vio_device_desc = (vio_device_desc & 0xffffffff00000000) | *data; break;
+	case VIRTIO_DEVICE_DESC_HIGH: vio_device_desc = (vio_device_desc & 0xffffffff) | (*data << 32); break;
+	case VIRTIO_QUEUE_READY: vio_queue_ready = (uint32_t)*data; break;
 	case VIRTIO_QUEUE_NOTIFY: vio_queue_notify = (uint32_t)*data; break;
 	default: assert(0);		// unsupported I/O register
 	}
@@ -192,41 +191,43 @@ uint32_t vio_interrupt_pending()
 
 vio_disk_access()
 {
+	uint64_t mem_data;
 	// read 3 descriptors from virtual queue
 
 	// address of virt queue
-	uint32_t virtq = vio_pfn*vio_page_size ;
+	uint64_t virtq = vio_queue_desc ;
 
 	// address of avail 
-	uint32_t avail = virtq + 16 * vio_queue_num;	// 16 is descriptor size
-	uint32_t avail_idx;
-	pa_mem_interface(MEM_READ, avail + 2, MEM_HALFWORD, &avail_idx);	// read avail.idx
+	uint64_t avail = vio_driver_desc;	
+	uint16_t avail_idx;
+	pa_mem_interface(MEM_READ, avail + 2, MEM_HALFWORD, &mem_data);	// read avail.idx
+	avail_idx = (uint16_t)mem_data;
 
-	uint32_t head_index;
+	uint64_t head_index;
 	pa_mem_interface(MEM_READ , avail+4 + avail_idx*2 , MEM_HALFWORD , &head_index);	
 
-	uint32_t desc0_addr;
-	pa_mem_interface(MEM_READ, virtq + 16 * head_index, MEM_WORD, &desc0_addr);
+	uint64_t desc0_addr;
+	pa_mem_interface(MEM_READ, virtq + 16 * head_index, MEM_DWORD, &desc0_addr);
 
-	uint32_t sector;
-	pa_mem_interface(MEM_READ, desc0_addr + 8, MEM_WORD, &sector);		// LSB
+	uint64_t sector;
+	pa_mem_interface(MEM_READ, desc0_addr + 8, MEM_DWORD, &sector);		// LSB
 
-	uint32_t desc0_next;	// index for desc1
+	uint64_t desc0_next;	// index for desc1
 	pa_mem_interface(MEM_READ, virtq + 16 * head_index + 14, MEM_HALFWORD, &desc0_next);
 
-	uint32_t desc1_addr;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next , MEM_HALFWORD, &desc1_addr);
+	uint64_t desc1_addr;
+	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next , MEM_DWORD, &desc1_addr);
 
-	uint32_t desc1_len;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 8, MEM_HALFWORD, &desc1_len);
+	uint64_t desc1_len;
+	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 8, MEM_WORD, &desc1_len);
 
-	uint32_t desc1_flags;
+	uint64_t desc1_flags;
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 12, MEM_HALFWORD, &desc1_flags);
 
-	uint32_t desc1_next;
+	uint64_t desc1_next;
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 14, MEM_HALFWORD, &desc1_next);
 
-	uint32_t data;	// only 1 byte used
+	uint64_t data;	// only 1 byte used
 
 	if (desc1_flags & VRING_DESC_F_WRITE) {
 		for (int i = 0; i < desc1_len; i++) {
@@ -242,18 +243,18 @@ vio_disk_access()
 	}
 
 	// set desc2's block to zero to mean completion
-	uint32_t desc2_addr;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc1_next, MEM_WORD, &desc2_addr);
+	uint64_t desc2_addr;
+	pa_mem_interface(MEM_READ, virtq + 16 * desc1_next, MEM_DWORD, &desc2_addr);
 
 	data = 0;
 	pa_mem_interface(MEM_WRITE, desc2_addr, MEM_BYTE, &data);
 
 	// update used
 	// address of used
-	uint32_t used = virtq + 4096;	// per xv6-rv32
+	uint64_t used = vio_device_desc ;	
 
 	// update used.idx; 
-	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, head_index);
+	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, &head_index);
 
 	// update used.idx; vio_used_idx is same as used.idx
 	vio_used_idx = (vio_used_idx + 1) % VIO_QUEUE_SIZE;

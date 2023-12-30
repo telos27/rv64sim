@@ -88,7 +88,7 @@
 #define IO_PLIC_START	0x0c000000
 #define IO_PLIC_END 0x0c203008
 #define PLIC_PRIORITY_START 0x0c000004
-#define PLIC_PRIORITY_END 0x0c000200
+#define PLIC_PRIORITY_END   0x0c000200
 #define PLIC_PENDING_START 0x0c001000
 #define PLIC_PENDING_END 0x0c001010
 #define PLIC_ENABLE_START 0x0c002080
@@ -97,7 +97,7 @@
 #define PLIC_CLAIM 0x0c201004
 
 #define IO_VIRTIO_START 0x10001000
-#define IO_VIRTIO_END   0x10001074
+#define IO_VIRTIO_END   0x100010a8
 // offsets
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h
@@ -107,17 +107,21 @@
 #define VIRTIO_VENDOR_ID		0x00c // 0x554d4551
 #define VIRTIO_DEVICE_FEATURES	0x010
 #define VIRTIO_DRIVER_FEATURES	0x020
-#define VIRTIO_GUEST_PAGE_SIZE	0x028 // page size for PFN, write-only
 #define VIRTIO_QUEUE_SEL		0x030 // select queue, write-only
 #define VIRTIO_QUEUE_NUM_MAX	0x034 // max size of current queue, read-only
 #define VIRTIO_QUEUE_NUM		0x038 // size of current queue, write-only
 #define VIRTIO_QUEUE_ALIGN		0x03c // used ring alignment, write-only
-#define VIRTIO_QUEUE_PFN		0x040 // physical page number for queue, read/write
 #define VIRTIO_QUEUE_READY		0x044 // ready bit
 #define VIRTIO_QUEUE_NOTIFY	0x050 // write-only
 #define VIRTIO_INTERRUPT_STATUS	0x060 // read-only
 #define VIRTIO_INTERRUPT_ACK	0x064 // write-only
 #define VIRTIO_STATUS		0x070 // read/write
+#define VIRTIO_QUEUE_DESC_LOW	0x080 // physical address for descriptor table, write-only
+#define VIRTIO_QUEUE_DESC_HIGH	0x084
+#define VIRTIO_DRIVER_DESC_LOW	0x090 // physical address for available ring, write-only
+#define VIRTIO_DRIVER_DESC_HIGH	0x094
+#define VIRTIO_DEVICE_DESC_LOW	0x0a0 // physical address for used ring, write-only
+#define VIRTIO_DEVICE_DESC_HIGH	0x0a4
 
 
 // debugging use only, don't use in production code
