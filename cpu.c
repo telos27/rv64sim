@@ -194,13 +194,13 @@ uint64_t write_CSR(int CSR_no, uint64_t value)
 {
     CSRs[CSR_no] = value;
     if (CSR_no == CSR_MTVEC) {
-        printf("write_CSR: mtvec = %llx, pc=%lx\n", value, pc);
+ //       printf("write_CSR: mtvec = %llx, pc=%llx\n", value, pc);
     }
     if (CSR_no == CSR_STVEC) {
-        printf("write_CSR: stvec = %llx, pc=%lx\n", value, pc);
+ //       printf("write_CSR: stvec = %llx, pc=%llx\n", value, pc);
     }
     if (CSR_no == CSR_SATP) {
-        printf("write_CSR: satp = %llx, pc=%lx\n", value, pc);
+ //       printf("write_CSR: satp = %llx, pc=%llx\n", value, pc);
     }
     if (CSR_no == CSR_SIP) {
 //        printf("write_CSR: sip = %llx, pc=%lx\n", value, pc);
@@ -698,7 +698,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             // mie = mpie ; mpie=1 ; mpp = mode
             write_CSR(CSR_MSTATUS, (prev_mode << 11) | CSR_MSTATUS_MPIE | ((mstatus & CSR_MSTATUS_MPIE) >> 4));
             uint64_t next_pc = read_CSR(CSR_MEPC);
-  //          printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
+ //           printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
             return next_pc;
         }
         case ECALL_SRET: {
@@ -708,7 +708,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             // mie = mpie ; mpie=1 ; spp = mode[0]
             write_CSR(CSR_SSTATUS, ((prev_mode&1) << 8) | CSR_SSTATUS_SPIE | ((sstatus & CSR_SSTATUS_SPIE) >> 4));
             uint64_t next_pc = read_CSR(CSR_SEPC);
- //           printf("SRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
+  //         printf("SRET: pc=0x%llx, cycles=0x%llx , next_pc=0x%llx\n", pc, no_cycles , next_pc);
             return next_pc;
         }
         case ECALL_WFI: {
@@ -990,8 +990,8 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_S; // switch to M mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet
- //       printf("[time=0x%llxus]S INTR: pc=%llx , interrupt=%x:%x , next=%llx\n", (uint64_t)get_microseconds() , pc,
- //           interrupt >> 32, interrupt & 0xffffffff, result);
+//       printf("[time=0x%llxus]S INTR: pc=%llx , interrupt=%x:%x , next=%llx\n", (uint64_t)get_microseconds() , pc,
+//            interrupt >> 32, interrupt & 0xffffffff, result);
     }
     return result;
 }

@@ -82,11 +82,25 @@ Current status:
 	* now timer seems to be broken again, M timer not turning into S timer
 	* reading a few more disk blocks, but otherwise still hangs
 	* interrupt handling still seems incorrect: no S timer if I turn on the S external interrupt
+	* kvminithart() sets kernel satp to 800ff; then there is satp to 800b2 (init process?)(b4, userret)
+		then satp back to 800ff (a4, trampoline), then no more
+	* traced into exec() system call from init
+	* in sys_exec() now, does not seem to reach the end of exec()
+	* does not reach the first readi() in exec(), but there is a disk read from sector 64 
+	* that's from namei(), it appears that it doesn't get to the second read which is for the elf header
+	* if I just it run normally, it can get to loadseg(4K, but only reads 2K); timer interrupt still not being turned into SSI
+
+xv6 logic
+	* scheduler(): finds a runnable process and swtch()
+	* swtch(): restores context and does a ret(jump to ra) (initial ra is forkret(), set in allocproc())
+	* forkret(): fsinit() for the first process; normally usertrapret()
+	* usertrapret(): set stvec to uservec()(trampoline), set sepc to process' saved pc, jump to userret()
+	* userret(): set satp to user pt, restore register and sret
+	* sret goes to execute the process and init does an exec system call (which will be handled by uservec())
+	* uservec(): save registers, load some info, set satp to kernel, and jump to usertrap()
+	* usertrap(): set stvec to kernelvec(), then handle the interrupt(syscall() for system calls, devintr() for interrupts),
+		and call usertrapret()
+	* devintr(): if external interrupt, plic_claim() and hand off to uart or virtio, then plic_complete()
+	* virtio_disk_intr(): set INTR_ACK, set flags to wake up process waiting for read data
+	* seems to wraparound issue as it hangs after 8 virtio requests and the queue size is 8
 	* 
-
-
-
-Usage scenarioes:
-1. simple machine code
-2. Linux image plus dtb
-3. xv6 image plus file system

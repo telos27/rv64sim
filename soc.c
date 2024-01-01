@@ -209,7 +209,8 @@ vio_disk_access()
 	uint64_t avail = vio_driver_desc;	
 	uint16_t avail_idx;
 	pa_mem_interface(MEM_READ, avail + 2, MEM_HALFWORD, &mem_data);	// read avail.idx
-	avail_idx = (uint16_t)mem_data;
+	avail_idx = ((uint16_t)mem_data-1) % VIO_QUEUE_SIZE;
+	//printf("avail_idx=%d\n", avail_idx);
 
 	uint64_t head_index;
 	pa_mem_interface(MEM_READ , avail+4 + avail_idx*2 , MEM_HALFWORD , &head_index);	
@@ -269,7 +270,7 @@ vio_disk_access()
 	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, &head_index);
 
 	// update used.idx; vio_used_idx is same as used.idx
-	vio_used_idx = (vio_used_idx + 1) % VIO_QUEUE_SIZE;
+u	vio_used_idx = (vio_used_idx + 1);
 	pa_mem_interface(MEM_WRITE, used + 2, MEM_HALFWORD, &vio_used_idx);
 }
 
@@ -430,13 +431,14 @@ uint64_t run_clint()
 	mstatus = read_CSR(CSR_MSTATUS);
 	mip = read_CSR(CSR_MIP);
 	mie = read_CSR(CSR_MIE);
+	/*
 	// generate interrupt only if all three conditions are met:
 	// MIP.MTIP , MIE.MTIE , MSTATUS.MIE
 	if ((mip & CSR_MIP_MTIP) && (mie & CSR_MIE_MTIE) && ((mstatus & CSR_MSTATUS_MIE)||mode!=MODE_M)) {
 		gen_interrupt = INTR_MTIMER;	
 		return gen_interrupt;
 	}
-
+	*/
 	// SEI
 	uint64_t sstatus = read_CSR(CSR_SSTATUS);
 	uint64_t sip = read_CSR(CSR_SIP);
