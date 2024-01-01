@@ -2,6 +2,8 @@
 
 #define INITIAL_PC 0x80000000
 
+
+
 // machine-mode CSR, only defined the ones we currently use
 #define CSR_MSTATUS 0x300
 #define CSR_MISA 0x301
@@ -44,14 +46,20 @@
 #define CSR_SSTATUS_SIE 0x2
 #define CSR_SSTATUS_SPIE 0x20
 #define CSR_SSTATUS_SPP 0x100
+#define CSR_SIP_SSIP 0x2
+#define CSR_SIP_SEIP 0x200
+#define CSR_SIE_SSIE 0x2
+#define CSR_SIE_SEIE 0x200
 #define CSR_SATP_MODE (0xf<<60)
 #define CSR_SATP_PPN 0xfffffffffff	// bits 43:0
 	
 #define CSR_SATP_MODE_SV39 0x8
 
 // interrupt numbers
-#define INTR_MTIMER (1<<63 | 7)
-#define INTR_MEXTERNAL (1<<63 | 0xb)
+#define INTR_SSOFTWARE ((1LL<<63)|1)
+#define INTR_SEXTERNAL ((1LL<<63)|9)
+#define INTR_MTIMER ((1LL<<63) | 7)
+#define INTR_MEXTERNAL ((1LL<<63) | 0xb)
 #define INT_INSTR_MISALIGN 0x0
 #define INT_INSTR_ACCESS 0x1
 #define INT_ILLEGAL_INSTR 0x2
@@ -135,5 +143,5 @@ uint32_t io_read(uint64_t addr, uint64_t* data);
 uint32_t io_write(uint64_t addr, uint64_t* data);
 
 uint32_t init_clint();
-uint32_t run_clint();
+uint64_t run_clint();
 uint64_t get_microseconds();

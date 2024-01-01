@@ -13,7 +13,7 @@
 
 // CLINT I/O register states
 static uint64_t timer = 0;	// part of CLINT, mtime in SiFive doc
-static uint32_t timer_match = 0;	// part of CLINT, mtimecmp in SiFive doc
+static uint64_t timer_match = 0;	// part of CLINT, mtimecmp in SiFive doc
 
 // UART state
 static uint64_t uart_interrupt = 0;
@@ -86,9 +86,10 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 		plic_threshold = (uint32_t)*data;
 	} else if (addr == PLIC_CLAIM) {
 		// clear corresponding pending bit
-		uint32_t* p = plic_pending[*data >> 5];
+		uint32_t* p = &plic_pending[(*data) >> 5];
 		*p &= ~(1 << (*data & 0x1f));
-
+		uint64_t sip = read_CSR(CSR_SIP);
+		write_CSR(CSR_SIP, sip & (~CSR_SIP_SEIP));
 		plic_claim = 0 ;		// TODO: should be next pending interrupt? current way only works if there is single pending interrupt
 	} else {
 		assert(0);
@@ -99,6 +100,7 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 
 uint32_t run_plic()
 {
+
 	// rvemu seems to assume a single priority pending, it should calculate according to priority and pending
 	if (uart_interrupt_pending) {
 		plic_pending[0] |= 1 << 10;
@@ -108,6 +110,10 @@ uint32_t run_plic()
 		vio_disk_access();
 		plic_pending[0] |= 1 << 1;
 		plic_claim = 1;
+	}
+	if (plic_claim > 0) {
+		uint64_t sip = read_CSR(CSR_SIP);
+		write_CSR(CSR_SIP, sip | CSR_SIP_SEIP);
 	}
 	return 0;
 }
@@ -147,7 +153,8 @@ uint32_t vio_read(uint64_t addr, uint64_t* data)
 	case VIRTIO_VENDOR_ID: *data = 0x554d4551; break;
 	case VIRTIO_DEVICE_FEATURES: *data = 0; break;	// appears unused
 	case VIRTIO_QUEUE_NUM_MAX: *data = VIO_QUEUE_SIZE; break;
-	case VIRTIO_QUEUE_READY: *data = vio_queue_ready; break;
+	case VIRTIO_QUEUE_READY: *data = vio_queue_ready; break;	
+	case VIRTIO_INTERRUPT_STATUS: *data = 1; break;		// should be ok
 	default: assert(0);		// unsupported I/O register
 	}
 }
@@ -165,6 +172,7 @@ uint32_t vio_write(uint64_t addr, uint64_t* data)
 	case VIRTIO_QUEUE_SEL: assert(*data == 0); break;	// only single queue
 	case VIRTIO_QUEUE_NUM: vio_queue_num = (uint32_t)*data; break;
 	case VIRTIO_QUEUE_ALIGN: vio_queue_align = (uint32_t)*data; break;
+	case VIRTIO_INTERRUPT_ACK: break; // don't think we need to do anything yet, as queue_notify is updated already
 	case VIRTIO_QUEUE_DESC_LOW: vio_queue_desc = (vio_queue_desc & 0xffffffff00000000) | *data; break;
 	case VIRTIO_QUEUE_DESC_HIGH: vio_queue_desc = (vio_queue_desc & 0xffffffff) | (*data << 32); break;
 	case VIRTIO_DRIVER_DESC_LOW: vio_driver_desc = (vio_driver_desc & 0xffffffff00000000) | *data; break;
@@ -229,17 +237,21 @@ vio_disk_access()
 
 	uint64_t data;	// only 1 byte used
 
-	if (desc1_flags & VRING_DESC_F_WRITE) {
+	// NOTE: write means device writes to buffer, which is actually a disk read
+	if ((desc1_flags & VRING_DESC_F_WRITE)==0) {
 		for (int i = 0; i < desc1_len; i++) {
 			pa_mem_interface(MEM_READ, desc1_addr + i, MEM_BYTE , &data);
 			vio_disk[sector * SECTOR_SIZE + i] = data;
+			
 		}
+		printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
 	}
 	else {
 		for (int i = 0; i < desc1_len; i++) {
 			data = vio_disk[sector * SECTOR_SIZE + i];
 			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data);
 		}
+		printf("vio: sector %ld -> [0x%lx], len=%d\n", sector , desc1_addr, desc1_len);
 	}
 
 	// set desc2's block to zero to mean completion
@@ -299,7 +311,7 @@ uint32_t io_write(uint64_t addr, uint64_t* data)
 	switch (addr) {
 	//	case IO_CLINT_TIMERL: timer_l = *data; break;
 	//	case IO_CLINT_TIMERH: timer_h = *data; break;
-		case IO_CLINT_TIMERMATCHL: timer_match = *data; break;
+	case IO_CLINT_TIMERMATCHL: timer_match = *data; /*printf("timer match=%llu, time=%llu\n", timer_match, timer);*/ break;
 		// emulate UART behavior; LCR and FCR write should be ok
 		case IO_UART_DATA: printf("%c", *data); fflush(stdout); break ;
 		case IO_UART_INTRENABLE: uart_interrupt = *data; break;
@@ -379,7 +391,7 @@ static uint64_t last_time = 0;		// last time when we updated the timer, initiali
 // CLINT: check to see if we should generate a timer interrupt
 // return value: timer interrupt, 0 if no interrupt
 // increment timer and also see if we've exceeded threshold
-uint32_t run_clint()
+uint64_t run_clint()
 {
 	uint64_t gen_interrupt = 0xffffffffffffffff;
 
@@ -389,6 +401,7 @@ uint32_t run_clint()
 	// check for external interrupt
 	run_plic();
 
+	/*
 	mstatus = read_CSR(CSR_MSTATUS);
 	mip = read_CSR(CSR_MIP);
 	mie = read_CSR(CSR_MIE);
@@ -396,16 +409,18 @@ uint32_t run_clint()
 		gen_interrupt = INTR_MEXTERNAL;
 		return gen_interrupt;
 	}
+	*/
 
 	// update timer based on the current time
-	elapsed_time = get_microseconds() - last_time;	
+	elapsed_time = get_microseconds() - last_time;
+	last_time += elapsed_time;
 	timer += elapsed_time;
 //	printf("timer=%ld\n", timer);
 
 	// compare timer and set interrupt pending info
 	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
 	mip = read_CSR(CSR_MIP);
-	if (timer_match >= timer) {	// timer_match set and current time>=timer_match
+	if (timer>timer_match) {	// timer_match set and current time>=timer_match
 		wfi = 0;
 		write_CSR(CSR_MIP, mip | CSR_MIP_MTIP);		
 	} else {
@@ -417,9 +432,40 @@ uint32_t run_clint()
 	mie = read_CSR(CSR_MIE);
 	// generate interrupt only if all three conditions are met:
 	// MIP.MTIP , MIE.MTIE , MSTATUS.MIE
-	if ((mip & CSR_MIP_MTIP) && (mie & CSR_MIE_MTIE) && (mstatus & CSR_MSTATUS_MIE)) {
-		gen_interrupt = INTR_MTIMER;
+	if ((mip & CSR_MIP_MTIP) && (mie & CSR_MIE_MTIE) && ((mstatus & CSR_MSTATUS_MIE)||mode!=MODE_M)) {
+		gen_interrupt = INTR_MTIMER;	
+		return gen_interrupt;
 	}
+
+	// SEI
+	uint64_t sstatus = read_CSR(CSR_SSTATUS);
+	uint64_t sip = read_CSR(CSR_SIP);
+	uint64_t sie = read_CSR(CSR_SIE);
+
+	// generate interrupt only if all three conditions are met:
+	// SIP.SSIP , SIE.MSIE , SSTATUS.SIE
+	if ((sip & CSR_SIP_SSIP) && (sie & CSR_SIE_SSIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
+		gen_interrupt = INTR_SSOFTWARE;
+		return gen_interrupt;
+	}
+
+
+	// TODO: why would this remove the SSI interrupt?
+	// generate interrupt only if all three conditions are met:
+	// SIP.SEIP , SIE.MEIE , SSTATUS.SIE
+	if ((sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
+		gen_interrupt = INTR_SEXTERNAL;
+		return gen_interrupt;
+	}
+
+	// SSI
+	
+	/*
+	sstatus = read_CSR(CSR_SSTATUS);
+	sip = read_CSR(CSR_SIP);
+	sie = read_CSR(CSR_SIE);
+	*/
+
 
 	return gen_interrupt;
 }

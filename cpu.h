@@ -1,6 +1,11 @@
 #pragma once
 #include <stdint.h>
 
+// privilege levles
+#define MODE_M 0x3
+#define MODE_S 0x1
+#define MODE_U 0x0
+
 // memory operations funct3
 #define MEM_BYTE 0x0
 #define MEM_HALFWORD 0x1
@@ -20,6 +25,7 @@
 #define MEMSIZE 256*1024*1024 
 
 extern uint64_t pc;
+extern unsigned int mode;
 extern uint64_t no_cycles;
 extern uint8_t mem[];   // main memory
 

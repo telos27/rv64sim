@@ -59,8 +59,30 @@ Current status:
 	* with MMU active, now it crashes after kvminit
 	* A&D bits not updated?  commented it out for now
 	* now crash in virtio, fixed an uninitialized variable bug
-	* now it just hangs, could be the lack of timer
+	* now it just hangs, could be the lack of timer; code is still executing, just not clear about the logic in xv6
 	* should go through the entire interrupt logic
+	* fixed some delegation and other stuff, but still not right, it appears that we are generating a timer interrupt before
+		stvec is set but deleg is set already
+		* deleg is set, mret to S-mode, but stvec not set yet
+		* no obvious problems, go through it again tomorrow
+	* cleaned up some interrupt logic and added support for SSI
+	* timer interrupt timing seems off, timer update was wrong
+	* interval is a bit long(1s vs 0.1s, but shouldn't make much difference)
+	* external interrupt still not being handled correctly, added code to handle that
+	* fixed some simple virtio code
+	* virtio read and write were reversed
+	* we should be at the point of starting the first process
+	* problem in usertrapret
+	* exception when we do address translation with the new memory map, have to understand it a little bit to
+	  see why it's wrong
+	* passed userinit(), should be in scheduler() now
+	* userinit() creates the first process including its page table and scheduler runs it
+	* problem w/ page table or address translation
+	* finally found the problem, there is a 32-bit mask in jalr
+	* now timer seems to be broken again, M timer not turning into S timer
+	* reading a few more disk blocks, but otherwise still hangs
+	* interrupt handling still seems incorrect: no S timer if I turn on the S external interrupt
+	* 
 
 
 

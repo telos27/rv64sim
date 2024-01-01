@@ -48,20 +48,9 @@ int load_code(char* file_name)
     uint8_t* p = mem;
 
     fseek(f, 0, SEEK_END);
-    len = ftell(f);
-   
+    len = ftell(f);   
     rewind(f);
-
-    // HACK:
-    if (strcmp(file_name, "kernel") == 0) {
-        fseek(f, 4096, SEEK_CUR);
-        len -= 4096;
-    }
-   
     fread(p, len, 1, f);
-
-    // HACK: bss
-    // memset(mem + 0xa890, 0, 0x194b0);
 
     fclose(f);
 

@@ -116,15 +116,11 @@
 #define AMO_D 0x3
 #define AMO_W 0x2
 
-// privilege levles
-#define MODE_M 0x3
-#define MODE_S 0x1
-#define MODE_U 0x0
 
 // Sv39
 #define PTE_LEVELS 3
 #define VPN_SEG1 0x7fc0000	// bits [26:18] of vpn
-#define VPN_SEG2 0x3ff00	// bits[17:9]
+#define VPN_SEG2 0x3fe00	// bits[17:9]
 #define VPN_SEG3 0x1ff // bits[8:0]
 #define PTE_V 0x1
 #define PTE_R 0x2
@@ -155,7 +151,7 @@ uint8_t mem[MEMSIZE];   // main memory
 static REGISTER regs[32];
 static uint64_t CSRs[NO_CSRS];  // explicit init?
 uint64_t pc ;       // 64-bit PC
-static unsigned int mode;      // privilege mode: currently M only
+unsigned int mode;      // privilege mode: currently M only
 static uint64_t reservation;   // address for lr/sc ; top 61 bits
 unsigned int wfi = 0;    // WFI flag 
 uint64_t no_cycles; // execution cycles; currently always 1 cycle/instruction
@@ -197,6 +193,18 @@ uint64_t read_CSR(int CSR_no)
 uint64_t write_CSR(int CSR_no, uint64_t value)
 {
     CSRs[CSR_no] = value;
+    if (CSR_no == CSR_MTVEC) {
+        printf("write_CSR: mtvec = %llx, pc=%lx\n", value, pc);
+    }
+    if (CSR_no == CSR_STVEC) {
+        printf("write_CSR: stvec = %llx, pc=%lx\n", value, pc);
+    }
+    if (CSR_no == CSR_SATP) {
+        printf("write_CSR: satp = %llx, pc=%lx\n", value, pc);
+    }
+    if (CSR_no == CSR_SIP) {
+//        printf("write_CSR: sip = %llx, pc=%lx\n", value, pc);
+    }
     return 1;
 }
 
@@ -645,7 +653,7 @@ uint64_t jalr_op(int rd, int rs1, unsigned int imm12)
     // NOTE: write register afterwards, rd could be same as rs1
     uint64_t saved_pc = pc + 4;
     // NOTE: sign extend , zero LSB
-    unsigned int ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & 0xfffffffe;
+    uint64_t ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & 0xfffffffffffffffe;
     //printf("JALR: pc=%x , rd=%x , rs1=%x , imm12=%x , next=%x\n", pc , rd, rs1, imm12 ,  ret);
     write_reg(rd, saved_pc);
     return ret;
@@ -690,7 +698,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             // mie = mpie ; mpie=1 ; mpp = mode
             write_CSR(CSR_MSTATUS, (prev_mode << 11) | CSR_MSTATUS_MPIE | ((mstatus & CSR_MSTATUS_MPIE) >> 4));
             uint64_t next_pc = read_CSR(CSR_MEPC);
-    //        printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
+  //          printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
             return next_pc;
         }
         case ECALL_SRET: {
@@ -700,7 +708,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             // mie = mpie ; mpie=1 ; spp = mode[0]
             write_CSR(CSR_SSTATUS, ((prev_mode&1) << 8) | CSR_SSTATUS_SPIE | ((sstatus & CSR_SSTATUS_SPIE) >> 4));
             uint64_t next_pc = read_CSR(CSR_SEPC);
-            printf("SRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
+ //           printf("SRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
             return next_pc;
         }
         case ECALL_WFI: {
@@ -954,7 +962,8 @@ uint64_t execute_interrupt(uint64_t interrupt)
 
     if (interrupt & 0x8000000000000000) {
         int interrupt_no = interrupt & 0x7fffffff;
-        delegated = (interrupt_no < 32) && (interrupt_delegate & (1 << interrupt_no));
+        if (interrupt_no!=3 && interrupt_no!=7 && interrupt_no!=11) 
+            delegated = (interrupt_no < 32) && (interrupt_delegate & (1 << interrupt_no));
     }
     else {
         delegated = (interrupt < 32) && (exception_delegate & (1 << interrupt));
@@ -962,7 +971,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
 
     // default is M mode
     // NOTE: mstatus.mie, mtip, mtie all already checked when interrupt was assigned
-    if (mode!=MODE_M || !delegated) {
+    if (mode==MODE_M || !delegated) {
         write_CSR(CSR_MCAUSE, interrupt);
         // mstatus: copy MIE to MPIE, clear MIE, copy current mode into MPP
         write_CSR(CSR_MSTATUS, ((read_CSR(CSR_MSTATUS) & CSR_MSTATUS_MIE) << 4) | (mode << 11));
@@ -970,7 +979,8 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_MEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_M; // switch to M mode ;
         result = read_CSR(CSR_MTVEC);  // jump to interrupt routine, no vectoring support yet
-   //     printf("[time=0x%lxus]M INTR: pc=%lx , interrupt=%"PRIx64", next = % lx\n", (uint64_t)get_microseconds() , pc, interrupt, result);
+ //       printf("[time=0x%lxus]M INTR: pc=%lx , interrupt=%x:%x, next = % lx\n", 
+ //         (uint64_t)get_microseconds() , pc, interrupt>>32 , interrupt&0xffffffff, result);
     }
     else {  // trap to S mode
         write_CSR(CSR_SCAUSE, interrupt);
@@ -980,7 +990,8 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_S; // switch to M mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet
-        printf("[time=0x%lxus]S INTR: pc=%lx , interrupt=%lx , next=%lx\n", (uint64_t)get_microseconds() , pc, interrupt, result);
+ //       printf("[time=0x%llxus]S INTR: pc=%llx , interrupt=%x:%x , next=%llx\n", (uint64_t)get_microseconds() , pc,
+ //           interrupt >> 32, interrupt & 0xffffffff, result);
     }
     return result;
 }
