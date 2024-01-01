@@ -98,8 +98,29 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 }
 
 
-uint32_t run_plic()
+// valid when uart_interrupt_pending
+static char uart_saved_char;
+
+int run_uart()
 {
+	// do read when the buffer is empty
+	if (!uart_interrupt_pending) {
+		if (IsKBHit()) {
+			uart_saved_char = ReadKBByte();
+			uart_interrupt_pending = 1;
+		}
+	}
+
+	return 0;
+}
+
+
+
+int run_plic()
+{
+	
+	run_uart();
+	// TODO: run virtio
 
 	// rvemu seems to assume a single priority pending, it should calculate according to priority and pending
 	if (uart_interrupt_pending) {
@@ -251,8 +272,9 @@ vio_disk_access()
 		for (int i = 0; i < desc1_len; i++) {
 			data = vio_disk[sector * SECTOR_SIZE + i];
 			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data);
+//			printf("vio read: mem[%llx] = %d\n", desc1_addr + i, (uint32_t)data);
 		}
-		printf("vio: sector %ld -> [0x%lx], len=%d\n", sector , desc1_addr, desc1_len);
+		printf("vio: sector %ld -> [0x%llx], len=%d\n", sector , desc1_addr, desc1_len);
 	}
 
 	// set desc2's block to zero to mean completion
@@ -270,7 +292,8 @@ vio_disk_access()
 	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, &head_index);
 
 	// update used.idx; vio_used_idx is same as used.idx
-u	vio_used_idx = (vio_used_idx + 1);
+	// TODO: 16-bit wraparound?
+	vio_used_idx = (vio_used_idx + 1);
 	pa_mem_interface(MEM_WRITE, used + 2, MEM_HALFWORD, &vio_used_idx);
 }
 
@@ -287,14 +310,14 @@ uint32_t io_read(uint64_t addr, uint64_t *data)
 	switch (addr) {
 		case IO_CLINT_TIMERL: *data = timer; break;
 		case IO_CLINT_TIMERMATCHL: *data = timer_match; break;
-		// emulate UART behavior
-		case IO_UART_DATA: *data = IsKBHit() ? ReadKBByte() : 0; break;
+		// emulate UART behavior: different between 32-bit non-MMU Linux and xv6
+		case IO_UART_DATA: *data = uart_interrupt_pending ? uart_saved_char : 0; uart_interrupt_pending = 0;break;
 		case IO_UART_INTRENABLE: *data = uart_interrupt; break;  // should not be readable, but Linux seems to read it
 		case IO_UART_INTRSTATUS: *data = 0; break;	// used by Linux driver?
 		case IO_UART_LINECTRL: *data = 0; break;	// used by Linux driver?
 		case IO_UART_MODEMCTRL: *data = 0; break;	// seems to be used by Linux driver
 		case IO_UART_MODEMSTATUS: *data = 0; break;	// seems to be used by Linux driver
-		case IO_UART_READY: *data = 0x60|IsKBHit(); break;
+		case IO_UART_READY: *data = 0x60|uart_interrupt_pending; break;
 		default: assert(0);break;
 	}
 	return 0;
@@ -402,7 +425,6 @@ uint64_t run_clint()
 	// check for external interrupt
 	run_plic();
 
-	/*
 	mstatus = read_CSR(CSR_MSTATUS);
 	mip = read_CSR(CSR_MIP);
 	mie = read_CSR(CSR_MIE);
@@ -410,7 +432,6 @@ uint64_t run_clint()
 		gen_interrupt = INTR_MEXTERNAL;
 		return gen_interrupt;
 	}
-	*/
 
 	// update timer based on the current time
 	elapsed_time = get_microseconds() - last_time;

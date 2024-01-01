@@ -89,6 +89,17 @@ Current status:
 	* does not reach the first readi() in exec(), but there is a disk read from sector 64 
 	* that's from namei(), it appears that it doesn't get to the second read which is for the elf header
 	* if I just it run normally, it can get to loadseg(4K, but only reads 2K); timer interrupt still not being turned into SSI
+	* avail and used index bugs in virtio
+	* now the shell starts and shows the $ prompt, but I can't type
+	* probably still need to debug uart and timer
+	* uart part is mostly working
+	* now illegal instruction for ls, loaded incorrectly or got corrupted?
+	* main areas left
+		* illegal instruction for ls
+		* uart
+		* timer
+		* interrupts
+	* almost there
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()
