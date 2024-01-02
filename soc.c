@@ -431,19 +431,7 @@ void virtio_tick()
 
 }
 
-// SoC: check to see if we should generate an interrupt
-// return value: interrupt, 0 if no interrupt
-// interrupt rules: 
-// 1. CLINT responsible for setting MTIP, cleared by settting TIMERCMP
-// 2. PLIC responsible for setting SEIP (expected by xv6, in real world should be dependent on where PLIC is hooked up, the
-//		PLIC spec is kind of confusing, and the diagram shows two signal lines for M/S mode, apparently it depends on the
-//		delegation as well, we'l use SEIP for now), cleared by writing to PLIC completion register(same as CLAIM register)
-// 3. SSIP set by software or external hart, cleared by software/external hart; no automatic change
-// 4. traps in M-mode or (!delegated in S/U) mode go to M hanlder
-// 5. traps in S/U mode and delegatd go to S handler
-// 6. traps are always taken regardless of enable bits?
-// 7. interrupts are only taken when both status and ie bits are set?
-//
+
 uint64_t soc_tick()
 {
 	uint64_t gen_interrupt = 0xffffffffffffffff;

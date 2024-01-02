@@ -116,4 +116,23 @@ xv6 logic
 	* devintr(): if external interrupt, plic_claim() and hand off to uart or virtio, then plic_complete()
 	* virtio_disk_intr(): set INTR_ACK, set flags to wake up process waiting for read data
 	* seems to be wraparound issue as it hangs after 8 virtio requests and the queue size is 8
-	* 
+
+// SoC: check to see if we should generate an interrupt
+// return value: interrupt, 0 if no interrupt
+// interrupt rules: 
+// 1. CLINT responsible for setting MTIP, cleared by settting TIMERCMP
+// 2. PLIC responsible for setting SEIP (expected by xv6, in real world should be dependent on where PLIC is hooked up, the
+//		PLIC spec is kind of confusing, and the diagram shows two signal lines for M/S mode, apparently it depends on the
+//		delegation as well, we'l use SEIP for now), cleared by writing to PLIC completion register(same as CLAIM register)
+// 3. SSIP set by software or external hart, cleared by software/external hart; no automatic change
+// 4. traps in M-mode or (!delegated in S/U) mode go to M hanlder
+// 5. traps in S/U mode and delegated go to S handler
+// 6. exceptions are always taken regardless of enable bits?
+// 7. interrupts are only taken when both status and ie bits are set?
+//
+// We'll structure it as:
+// 1. CLINT and PLIC responsible for setting/unsetting pending bits
+// 2. CPU decides whether to handle an interrupt
+	* any exceptions are always taken?
+	* interrupt taken if both status and ie bits are set?
+	* M handler unless in S/U mode and delegate bit is set for the current interrupt
