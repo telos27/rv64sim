@@ -266,7 +266,7 @@ vio_disk_access()
 			vio_disk[sector * SECTOR_SIZE + i] = data;
 			
 		}
-		printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
+	//	printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
 	}
 	else {
 		for (int i = 0; i < desc1_len; i++) {
@@ -274,7 +274,7 @@ vio_disk_access()
 			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data);
 //			printf("vio read: mem[%llx] = %d\n", desc1_addr + i, (uint32_t)data);
 		}
-		printf("vio: sector %ld -> [0x%llx], len=%d\n", sector , desc1_addr, desc1_len);
+	//	printf("vio: sector %ld -> [0x%llx], len=%d\n", sector , desc1_addr, desc1_len);
 	}
 
 	// set desc2's block to zero to mean completion

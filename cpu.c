@@ -542,7 +542,7 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
 
 
 // NOTE: imm is already sign-extended; shift amount only uses 5 bits
-int imm_op(int rd , int rs1 , int sub3 , int sub7 , unsigned int imm)
+int imm_op(int rd , int rs1 , int sub3 , int sub7 , uint64_t imm)
 {
     switch (sub3) {
     case ALU_ADD: write_reg(rd, read_reg(rs1) + (int32_t) imm); break;
@@ -575,7 +575,7 @@ int imm_op(int rd , int rs1 , int sub3 , int sub7 , unsigned int imm)
 
 
 // NOTE: imm is already sign-extended; shift amount only uses 5 bits
-// only uses 32 bits from rs1
+// only uses 32 bits from rs1, imm is 32-bit
 int imm32_op(int rd, int rs1, int sub3, int sub7, unsigned int imm)
 {
     switch (sub3) {
@@ -600,7 +600,7 @@ int imm32_op(int rd, int rs1, int sub3, int sub7, unsigned int imm)
 
 
 // return a sign-extended version of a number with no_bits
-int sign_extend(uint64_t n , int no_bits)
+uint64_t sign_extend(uint64_t n , int no_bits)
 {
     // TODO: is this portable?
     return (((signed int)n) << (64 - no_bits)) >> (64 - no_bits);
@@ -924,7 +924,7 @@ uint64_t execute_one_instruction()
     case OP_ADD: reg_op(rd, rs1, rs2, sub3, sub7); break;
     case OP_ADDW: reg32_op(rd, rs1, rs2, sub3, sub7); break;
     case OP_ADDI: imm_op(rd, rs1, sub3, sub7, sign_extend(imm12, 12)); break;
-    case OP_ADDIW: imm32_op(rd, rs1, sub3, sub7, sign_extend(imm12, 12)); break;
+    case OP_ADDIW: imm32_op(rd, rs1, sub3, sub7, (uint32_t)sign_extend(imm12, 12)); break;
         // NOTE: memory address offset is signed
     case OP_LB:
         rw_memory(MEM_READ, read_reg(rs1) + sign_extend(imm12, 12), sub3, &mem_data);
