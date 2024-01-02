@@ -96,7 +96,6 @@ Current status:
 	* now illegal instruction for ls, loaded incorrectly or got corrupted?
 	* main areas left
 		* uart
-		* release mode just hangs
 		* slowness: unnecessary waiting? race conditions? pipe in shell sometimes hangs 
 			(loading two new processes that haven't been run before?)
 	* almost there
@@ -106,7 +105,10 @@ Current status:
 	* MTIMER is being turned into SSOFTWARE although it's 2:1
 	* fixed, now it's running correctly at 0.1s per tick and one M interrupt and then one S interrupt
 	* cleaned up a bunch of warnings, but release mode still hangs, memory problem?
-	* if I turn off -O2, it works
+	* if I turn off -O2, it works; it doesn't even get to the point where it prints "xv6 is booting"
+	* it's actually stuck a few just a few instructions, at jalr (0x1c)
+	* bug in sign_extend(), again 64 bit vs 32 bit
+	* ok now?
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()

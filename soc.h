@@ -56,6 +56,7 @@
 #define CSR_SATP_MODE_SV39 0x8
 
 // interrupt numbers
+#define INTR_NONE 0xffffffffffffffff
 #define INTR_SSOFTWARE ((1LL<<63)|1)
 #define INTR_SEXTERNAL ((1LL<<63)|9)
 #define INTR_MTIMER ((1LL<<63) | 7)

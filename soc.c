@@ -104,6 +104,7 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 	} else if (addr == PLIC_CLAIM) {
 		// clear corresponding pending bit
 		uint32_t* p = &plic_pending[(*data) >> 5];
+		assert(*data < 128);
 		*p &= ~(1 << (*data & 0x1f));
 		uint64_t sip = read_CSR(CSR_SIP);
 		write_CSR(CSR_SIP, sip & (~CSR_SIP_SEIP));
@@ -113,7 +114,6 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 	}
 	return 0;
 }
-
 
 static uint64_t last_time = 0;		// last time when we updated the timer, initialized in init_clint()
 
@@ -285,6 +285,8 @@ int vio_disk_access()
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 14, MEM_HALFWORD, &desc1_next, &interrupt);
 
 	uint64_t data;	// only 1 byte used
+
+	assert(sector>0 && sector * SECTOR_SIZE + desc1_len < 64 * 1024 * 1024);
 
 	// NOTE: write means device writes to buffer, which is actually a disk read
 	if ((desc1_flags & VRING_DESC_F_WRITE)==0) {

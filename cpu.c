@@ -164,21 +164,24 @@ static unsigned int trace = 0;  // trace every instruction
 // can optimize by always 0 in x0
 REGISTER read_reg(int reg_no)
 {
+    assert(reg_no < 32);
     return (reg_no == 0) ? 0 : regs[reg_no];
 }
 
 int write_reg(int reg_no, REGISTER data)
 {
-        if (reg_no != 0) {
-            regs[reg_no] = data;
-        }
-        return reg_no;  // not used yet
+    assert(reg_no < 32);
+   if (reg_no != 0) {
+      regs[reg_no] = data;
+   }
+   return reg_no;  // not used yet
 }
 
 
 // TODO: implement CSR R/W rules according to spec
 uint64_t read_CSR(int CSR_no)
 {
+    assert(CSR_no < 4096);
     if (CSR_no == CSR_MISA)
         return 0x40401101;  // TODO
     else if (CSR_no == CSR_MVENDORID)
@@ -193,6 +196,7 @@ uint64_t read_CSR(int CSR_no)
 
 uint64_t write_CSR(int CSR_no, uint64_t value)
 {
+    assert(CSR_no < 4096);
     CSRs[CSR_no] = value;
     if (CSR_no == CSR_MTVEC) {
  //       printf("write_CSR: mtvec = %llx, pc=%llx\n", value, pc);
@@ -281,6 +285,7 @@ int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data,
     assert(addr >= INITIAL_PC);
     // TODO: PMP & PMA checks 
     addr -= INITIAL_PC;
+    assert(addr < MEMSIZE);
     assert(size == MEM_BYTE || size == MEM_HALFWORD || size == MEM_WORD || size==MEM_DWORD ||
             size==MEM_UBYTE || size==MEM_UHALFWORD || size==MEM_UWORD);
     if (mem_mode == MEM_WRITE) {
@@ -436,9 +441,9 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
             write_reg(rd, read_reg(rs1) << (read_reg(rs2) & 0x3f));
             break;
         case ALU_SRL:
-            if ((sub7&0xfe) == NORMAL) {
+            if ((sub7&0xfe) == NORMAL) {    // only check 6 bits
                 write_reg(rd, read_reg(rs1) >> (read_reg(rs2) & 0x3f));
-            } else if ((sub7&0xfe) == SRA) {
+            } else if ((sub7&0xfe) == SRA) {    // check 6 bits
                 // signed right shift
                 write_reg(rd, ((int64_t)read_reg(rs1)) >> (read_reg(rs2) & 0x3f));
             }
@@ -551,10 +556,10 @@ int imm_op(int rd , int rs1 , int sub3 , int sub7 , uint64_t imm)
     case ALU_AND: write_reg(rd, read_reg(rs1) & imm); break;
     case ALU_SLL: write_reg(rd, read_reg(rs1) << (imm & 0x3f)); break;
     case ALU_SRL:
-        if ((sub7&0xfe) == NORMAL) {
+        if ((sub7 & 0xfe) == NORMAL) {  // check 6 bits
             write_reg(rd, read_reg(rs1) >> (imm & 0x3f));
         }
-        else if ((sub7&0xfe) == SRA) {
+        else if ((sub7&0xfe) == SRA) {  // check 6 bits
             // signed right shift
             write_reg(rd, ((int64_t)read_reg(rs1)) >> (imm & 0x3f));
         }
@@ -603,7 +608,7 @@ int imm32_op(int rd, int rs1, int sub3, int sub7, unsigned int imm)
 uint64_t sign_extend(uint64_t n , int no_bits)
 {
     // TODO: is this portable?
-    return (((signed int)n) << (64 - no_bits)) >> (64 - no_bits);
+    return (((int64_t)n) << (64 - no_bits)) >> (64 - no_bits);
 }
 
 
@@ -912,7 +917,7 @@ uint64_t execute_one_instruction()
     }
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
-//    printf("pc=0x%lx , instr=0x%x\n", pc, instr);
+   // printf("pc=0x%lx , instr=0x%x\n", pc, instr);
 
     // decode instruction
     opcode = (instr & OPCODE_MASK) >> OPCODE_SHIFT;
@@ -978,16 +983,15 @@ void check_interrupt()
     uint64_t sie = read_CSR(CSR_SIE);
 
     // generate interrupt only if all three conditions are met:
-    // SIP.SSIP , SIE.MSIE , SSTATUS.SIE
+    // SIP.SSIP , SIE.SSIE , SSTATUS.SIE
     if ((sip & CSR_SIP_SSIP) && (sie & CSR_SIE_SSIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
         interrupt = INTR_SSOFTWARE;
         return ;
     }
 
     // SEI
-    // TODO: why would this remove the SSI interrupt?
     // generate interrupt only if all three conditions are met:
-    // SIP.SEIP , SIE.MEIE , SSTATUS.SIE
+    // SIP.SEIP , SIE.SEIE , SSTATUS.SIE
     if ((sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
         interrupt = INTR_SEXTERNAL;
         return;
@@ -1022,7 +1026,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_MCAUSE, interrupt);
         // mstatus: copy MIE to MPIE, clear MIE, copy current mode into MPP
         write_CSR(CSR_MSTATUS, ((read_CSR(CSR_MSTATUS) & CSR_MSTATUS_MIE) << 4) | (mode << 11));
-        write_CSR(CSR_MTVAL, (interrupt & 0x80000000) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
+        write_CSR(CSR_MTVAL, (interrupt & 0x8000000000000000) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
         write_CSR(CSR_MEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_M; // switch to M mode ;
         result = read_CSR(CSR_MTVEC);  // jump to interrupt routine, no vectoring support yet
@@ -1050,7 +1054,7 @@ int execute_code()
 
     for (;;) {
         next_pc = pc ;  // assume no jump
-        interrupt = 0xffffffffffffffff;     // NOTE: 0 is valid interrupt
+        interrupt = INTR_NONE;     // NOTE: 0 is valid interrupt
         no_cycles++;
 
         // run SoC every 1024 instructions
@@ -1061,10 +1065,10 @@ int execute_code()
         check_interrupt();
 
         // 4 combination of interrupt & wfi  
-        if (interrupt==0xffffffffffffffff) {   // if no interrupt; if there is interrupt, will execute the interrupt-handling code following this if
+        if (interrupt==INTR_NONE) {   // if no interrupt; if there is interrupt, will execute the interrupt-handling code following this if
             if (!wfi) next_pc = execute_one_instruction();    // does not change any state except for what is defined in the instruction
         }
-        if (interrupt!=0xffffffffffffffff) {
+        if (interrupt!=INTR_NONE) {
             next_pc = execute_interrupt(interrupt);
         }
    
