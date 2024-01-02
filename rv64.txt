@@ -95,11 +95,13 @@ Current status:
 	* uart part is mostly working
 	* now illegal instruction for ls, loaded incorrectly or got corrupted?
 	* main areas left
-		* illegal instruction for ls
 		* uart
 		* timer
 		* interrupts
+		* slowness: unnecessary waiting? race conditions? pipe in shell sometimes hangs
 	* almost there
+	* ls was due to incorrect immediate extension when doing xori
+	* now it's basically working, need a lot of cleanup
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()
@@ -113,5 +115,5 @@ xv6 logic
 		and call usertrapret()
 	* devintr(): if external interrupt, plic_claim() and hand off to uart or virtio, then plic_complete()
 	* virtio_disk_intr(): set INTR_ACK, set flags to wake up process waiting for read data
-	* seems to wraparound issue as it hangs after 8 virtio requests and the queue size is 8
+	* seems to be wraparound issue as it hangs after 8 virtio requests and the queue size is 8
 	* 
