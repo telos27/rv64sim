@@ -98,10 +98,12 @@ Current status:
 		* uart
 		* timer
 		* interrupts
-		* slowness: unnecessary waiting? race conditions? pipe in shell sometimes hangs
+		* slowness: unnecessary waiting? race conditions? pipe in shell sometimes hangs 
+			(loading two new processes that haven't been run before?)
 	* almost there
 	* ls was due to incorrect immediate extension when doing xori
 	* now it's basically working, need a lot of cleanup
+	* 
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()

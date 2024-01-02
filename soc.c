@@ -101,7 +101,7 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 // valid when uart_interrupt_pending
 static char uart_saved_char;
 
-int run_uart()
+int uart_tick()
 {
 	// do read when the buffer is empty
 	if (!uart_interrupt_pending) {
@@ -116,11 +116,9 @@ int run_uart()
 
 
 
-int run_plic()
+int plic_tick()
 {
-	
-	run_uart();
-	// TODO: run virtio
+
 
 	// rvemu seems to assume a single priority pending, it should calculate according to priority and pending
 	if (uart_interrupt_pending) {
@@ -419,11 +417,18 @@ void timer_tick()
 	last_time += elapsed_time;
 	timer += elapsed_time;
 	//	printf("timer=%ld\n", timer);
-}
 
-void uart_tick()
-{
-
+	// compare timer and set interrupt pending info
+	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
+	uint64_t mip = read_CSR(CSR_MIP);
+	if (timer > timer_match) {	// timer_match set (if not set, >= would sitll hold) and current time>=timer_match
+		wfi = 0;
+		write_CSR(CSR_MIP, mip | CSR_MIP_MTIP);
+	}
+	else {
+		// TODO: ok to reset here? 
+		write_CSR(CSR_MIP, mip & ~((uint32_t)CSR_MIP_MTIP));
+	}
 }
 
 void virtio_tick()
@@ -436,47 +441,25 @@ uint64_t soc_tick()
 {
 	uint64_t gen_interrupt = 0xffffffffffffffff;
 
-	uint64_t elapsed_time;
 
 	uint64_t mip, mie, mstatus;
-	// check for external interrupt
 
-	run_plic();
-	timer_tick();
 	uart_tick();
 	virtio_tick();
+	plic_tick();
+	timer_tick();
 
 	mstatus = read_CSR(CSR_MSTATUS);
 	mip = read_CSR(CSR_MIP);
 	mie = read_CSR(CSR_MIE);
-	if (plic_claim!=0 && (mip & CSR_MIP_MEIP) && (mie & CSR_MIE_MEIE) && (mstatus & CSR_MSTATUS_MIE)) {
-		gen_interrupt = INTR_MEXTERNAL;
-		return gen_interrupt;
-	}
-
-
-	// compare timer and set interrupt pending info
-	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
-	mip = read_CSR(CSR_MIP);
-	if (timer>timer_match) {	// timer_match set and current time>=timer_match
-		wfi = 0;
-		write_CSR(CSR_MIP, mip | CSR_MIP_MTIP);		
-	} else {
-		write_CSR(CSR_MIP, mip & ~((uint32_t)CSR_MIP_MTIP));
-	}
-
-	mstatus = read_CSR(CSR_MSTATUS);
-	mip = read_CSR(CSR_MIP);
-	mie = read_CSR(CSR_MIE);
-	/*
 	// generate interrupt only if all three conditions are met:
 	// MIP.MTIP , MIE.MTIE , MSTATUS.MIE
 	if ((mip & CSR_MIP_MTIP) && (mie & CSR_MIE_MTIE) && ((mstatus & CSR_MSTATUS_MIE)||mode!=MODE_M)) {
 		gen_interrupt = INTR_MTIMER;	
 		return gen_interrupt;
 	}
-	*/
-	// SEI
+	
+	// SSI
 	uint64_t sstatus = read_CSR(CSR_SSTATUS);
 	uint64_t sip = read_CSR(CSR_SIP);
 	uint64_t sie = read_CSR(CSR_SIE);
@@ -489,7 +472,7 @@ uint64_t soc_tick()
 	}
 
 
-	// SSI
+	// SEI
 	// TODO: why would this remove the SSI interrupt?
 	// generate interrupt only if all three conditions are met:
 	// SIP.SEIP , SIE.MEIE , SSTATUS.SIE
@@ -497,17 +480,10 @@ uint64_t soc_tick()
 	sip = read_CSR(CSR_SIP);
 	sie = read_CSR(CSR_SIE);
 	
-	if ((sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
+	if (plic_claim != 0 && (sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
 		gen_interrupt = INTR_SEXTERNAL;
 		return gen_interrupt;
 	}
-
-	// SSI
-	
-	/*
-	
-	*/
-
 
 	return gen_interrupt;
 }
