@@ -433,59 +433,17 @@ void timer_tick()
 
 void virtio_tick()
 {
-
 }
 
 
 uint64_t soc_tick()
 {
-	uint64_t gen_interrupt = 0xffffffffffffffff;
-
-
-	uint64_t mip, mie, mstatus;
-
 	uart_tick();
 	virtio_tick();
 	plic_tick();
 	timer_tick();
 
-	mstatus = read_CSR(CSR_MSTATUS);
-	mip = read_CSR(CSR_MIP);
-	mie = read_CSR(CSR_MIE);
-	// generate interrupt only if all three conditions are met:
-	// MIP.MTIP , MIE.MTIE , MSTATUS.MIE
-	if ((mip & CSR_MIP_MTIP) && (mie & CSR_MIE_MTIE) && ((mstatus & CSR_MSTATUS_MIE)||mode!=MODE_M)) {
-		gen_interrupt = INTR_MTIMER;	
-		return gen_interrupt;
-	}
-	
-	// SSI
-	uint64_t sstatus = read_CSR(CSR_SSTATUS);
-	uint64_t sip = read_CSR(CSR_SIP);
-	uint64_t sie = read_CSR(CSR_SIE);
-
-	// generate interrupt only if all three conditions are met:
-	// SIP.SSIP , SIE.MSIE , SSTATUS.SIE
-	if ((sip & CSR_SIP_SSIP) && (sie & CSR_SIE_SSIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
-		gen_interrupt = INTR_SSOFTWARE;
-		return gen_interrupt;
-	}
-
-
-	// SEI
-	// TODO: why would this remove the SSI interrupt?
-	// generate interrupt only if all three conditions are met:
-	// SIP.SEIP , SIE.MEIE , SSTATUS.SIE
-	sstatus = read_CSR(CSR_SSTATUS);
-	sip = read_CSR(CSR_SIP);
-	sie = read_CSR(CSR_SIE);
-	
-	if (plic_claim != 0 && (sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
-		gen_interrupt = INTR_SEXTERNAL;
-		return gen_interrupt;
-	}
-
-	return gen_interrupt;
+	return 0;
 }
 
 // initialize all SOC components

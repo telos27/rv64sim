@@ -957,6 +957,44 @@ uint64_t execute_one_instruction()
 }
 
 
+// check to see if what kind of interrupt we should generate
+void check_interrupt()
+{
+    uint64_t mip, mie, mstatus;
+
+    mstatus = read_CSR(CSR_MSTATUS);
+    mip = read_CSR(CSR_MIP);
+    mie = read_CSR(CSR_MIE);
+    // generate interrupt only if all three conditions are met:
+    // MIP.MTIP , MIE.MTIE , MSTATUS.MIE
+    if ((mip & CSR_MIP_MTIP) && (mie & CSR_MIE_MTIE) && ((mstatus & CSR_MSTATUS_MIE) || mode != MODE_M)) {
+        interrupt = INTR_MTIMER;
+        return ;
+    }
+
+    // SSI
+    uint64_t sstatus = read_CSR(CSR_SSTATUS);
+    uint64_t sip = read_CSR(CSR_SIP);
+    uint64_t sie = read_CSR(CSR_SIE);
+
+    // generate interrupt only if all three conditions are met:
+    // SIP.SSIP , SIE.MSIE , SSTATUS.SIE
+    if ((sip & CSR_SIP_SSIP) && (sie & CSR_SIE_SSIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
+        interrupt = INTR_SSOFTWARE;
+        return ;
+    }
+
+    // SEI
+    // TODO: why would this remove the SSI interrupt?
+    // generate interrupt only if all three conditions are met:
+    // SIP.SEIP , SIE.MEIE , SSTATUS.SIE
+    if ((sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
+        interrupt = INTR_SEXTERNAL;
+        return;
+    }
+}
+
+
 // return next_pc; -1 if we don't take the interrupt for some reason (currently not possible)
 // possible interrupts: timer + exceptions
 uint64_t execute_interrupt(uint64_t interrupt)
@@ -969,7 +1007,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
     int delegated = 0;
 
 
-    // TODO: delegated interrupts should check sie
+    // TODO: delegated interrupts should check sie?
     if (interrupt & 0x8000000000000000) {
         int interrupt_no = interrupt & 0x7fffffff;
         if (interrupt_no!=3 && interrupt_no!=7 && interrupt_no!=11) 
@@ -980,7 +1018,6 @@ uint64_t execute_interrupt(uint64_t interrupt)
     }
 
     // default is M mode
-    // NOTE: mstatus.mie, mtip, mtie all already checked when interrupt was assigned
     if (mode==MODE_M || !delegated) {
         write_CSR(CSR_MCAUSE, interrupt);
         // mstatus: copy MIE to MPIE, clear MIE, copy current mode into MPP
@@ -998,7 +1035,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_SSTATUS, ((read_CSR(CSR_SSTATUS) & CSR_SSTATUS_SIE) << 4) | ((mode & 1) << 8));
         write_CSR(CSR_STVAL, (interrupt & 0x8000000000000000) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
-        mode = MODE_S; // switch to M mode ;
+        mode = MODE_S; // switch to S mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet
 //       printf("[time=0x%llxus]S INTR: pc=%llx , interrupt=%x:%x , next=%llx\n", (uint64_t)get_microseconds() , pc,
 //            interrupt >> 32, interrupt & 0xffffffff, result);
@@ -1018,8 +1055,10 @@ int execute_code()
 
         // run SoC every 1024 instructions
         if ((no_cycles & 0x3ff) == 0) {
-            interrupt = soc_tick();
+            soc_tick();
         } 
+
+        check_interrupt();
 
         // 4 combination of interrupt & wfi  
         if (interrupt==0xffffffffffffffff) {   // if no interrupt; if there is interrupt, will execute the interrupt-handling code following this if
