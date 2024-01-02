@@ -7,7 +7,6 @@
 #include "soc.h"
 
 
-
 // instruction decoding： bitfields of an instruction; could use an array
 #define OPCODE_MASK 0x7f    // bits [6:0]
 #define OPCODE_SHIFT 0
@@ -117,7 +116,7 @@
 #define AMO_W 0x2
 
 
-// Sv39
+// Sv39 virtual memory
 #define PTE_LEVELS 3
 #define VPN_SEG1 0x7fc0000	// bits [26:18] of vpn
 #define VPN_SEG2 0x3fe00	// bits[17:9]
@@ -141,6 +140,7 @@
 // external memory
 uint8_t mem[MEMSIZE];   // main memory
 
+// TODO: leftover from 32-bit impl, clean up
 // MEMIO range: currently CLINT & UART, and debug syscall
 #define MEMIO_START 0x10000000
 #define MEMIO_END 0x12000000    // exclusive
@@ -155,9 +155,9 @@ unsigned int mode;      // privilege mode: currently M only
 static uint64_t reservation;   // address for lr/sc ; top 61 bits
 unsigned int wfi = 0;    // WFI flag 
 uint64_t no_cycles; // execution cycles; currently always 1 cycle/instruction
+static uint64_t interrupt;  // interrupt type
 
 static unsigned int trace = 0;  // trace every instruction
-static uint64_t interrupt;  // interrupt type
 
 
 // read register
@@ -176,6 +176,7 @@ int write_reg(int reg_no, REGISTER data)
 }
 
 
+// TODO: implement CSR R/W rules according to spec
 uint64_t read_CSR(int CSR_no)
 {
     if (CSR_no == CSR_MISA)
@@ -209,7 +210,9 @@ uint64_t write_CSR(int CSR_no, uint64_t value)
 }
 
 
-typedef uint64_t pte;
+// VM handling
+
+typedef uint64_t PTE;
 
 // translate 27-bit vpn va to 44-bit ppn
 // mem_access_mode: instruction read, data read, data write
@@ -217,12 +220,12 @@ typedef uint64_t pte;
 uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
 {
     uint64_t ppn = read_CSR(CSR_SATP) & CSR_SATP_PPN;
-    uint64_t vpn_segment[] = { vpn & VPN_SEG1 , vpn & VPN_SEG2 , vpn & VPN_SEG3};	// two segements corresponding to two-level page table
+    uint64_t vpn_segment[] = { vpn & VPN_SEG1 , vpn & VPN_SEG2 , vpn & VPN_SEG3};	// three segements corresponding to three-level page table
 
     // loop three levels for Sv39
     for (int i = 0; i < PTE_LEVELS; i++)
     {
-        uint64_t pte;
+        PTE pte;
 
         pa_mem_interface(MEM_READ, (ppn << 12) | ((vpn_segment[i]>>(9*(PTE_LEVELS-i-1)))<<3), MEM_DWORD, &pte, interrupt);	// physical address, no translation
         if (*interrupt != 0xffffffffffffffff) return 0;
@@ -234,17 +237,16 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
 
         if (pte & PTE_R || pte & PTE_X) { // leaf pte
             uint64_t result = (pte & PTE_PPN)>>10 ;
-            // check U & SUM & MXR
+            // TODO: check U & SUM & MXR
 
-            // check superpage alignment: the last segment of the PPN should all be 0
-            // need to loop for longer VPN
+            // check superpage alignment: the last segments of the PPN should all be 0
             if (((i == 0) && (((result & VPN_SEG2) != 0) || (result & VPN_SEG3 != 0))) || 
                 ((i==1) && ((result & VPN_SEG3) !=0))) {
                 *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
                 return 0;
             }
 
-            /* TODO: no need to check? 
+            /* TODO: no need to check?  xv6 doesn't use them, how about Linux?
             // A or D bit doesn't match
             if ((pte & PTE_A) == 0 || (mem_access_mode == MEM_WRITE && ((pte & PTE_D) == 0))) {
                 //or ACCESS if pte PMP/PMA
@@ -252,16 +254,14 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
                 return 0;
             }
             */
-            else {
-                // TODO: handle A&D update; set A, set D if write; should not update for xv6?
-                if (i == 0) {	// gigapage: use segment1 from VPN
-                    result |= vpn_segment[1];
-                }
-                if (i<=1) {     // megapage and gigapage: use segmenet2 from VPN
-                    result |= vpn_segment[2];
-                }
-                return result;
+            // TODO: handle A&D update; set A, set D if write; should not update for xv6?
+            if (i == 0) {	// gigapage: use segment1 from VPN
+                result |= vpn_segment[1];
             }
+            if (i<=1) {     // megapage and gigapage: use segmenet2 from VPN
+                result |= vpn_segment[2];
+            }
+            return result;
         }
         else {
             ppn = (pte & PTE_PPN)>>10;		// next-level PTE; should be good enough?
@@ -407,7 +407,7 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
     }
 }
 
-// NOTE: shift amount only uses 5-bits
+// NOTE: shift amount only uses 6-bits
 int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
 {
     if ((sub7 & 1) != 1) {
@@ -483,7 +483,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
 
 
 
-// NOTE: shift amount only uses 6-bits
+// NOTE: shift amount only uses 5-bits
 // operation on 32 bits only
 int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
 {
@@ -606,6 +606,7 @@ uint64_t sign_extend(uint64_t n , int no_bits)
     return (((signed int)n) << (64 - no_bits)) >> (64 - no_bits);
 }
 
+
 // return next PC, -1 if we don't branch
 int64_t branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned int imm7)
 {
@@ -660,6 +661,7 @@ uint64_t jalr_op(int rd, int rs1, unsigned int imm12)
 }
 
 // AUIPC opcode
+// NOTE: sign extend to 32 bits
 int auipc_op(int rd, unsigned int imm20)
 {
     write_reg(rd, pc + sign_extend(imm20 << 12 , 32));
@@ -667,6 +669,7 @@ int auipc_op(int rd, unsigned int imm20)
 }
 
 // LUI opcode
+// NOTE: sign extend to 32 bits
 int lui_op(int rd, unsigned int imm20)
 {
     write_reg(rd, sign_extend(imm20 << 12 , 32));
@@ -674,13 +677,12 @@ int lui_op(int rd, unsigned int imm20)
 }
 
 
-
 // CSR, ecall/ebreak, mret/sret, wfi
 // return next_pc ;
 uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t imm12)
 {
     switch (sub3) {
-    case SYSTEM_ECALL: {    // ecall , ebreak , mret
+    case SYSTEM_ECALL: {    // ecall , ebreak , mret, sret
         switch (imm12) {    // NOTE: use entire 12-bit to distinguish among the different instructions
         case ECALL_ECALL: {
             interrupt = mode+INT_UCALL;   // interrupt number is different for different modes
@@ -779,7 +781,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
     }
     default: interrupt = INT_ILLEGAL_INSTR ;    // undefined sub3
     }
-    return -1;  // only MRET does a jump
+    return -1;  // only MRET/SRET does a jump
 }
 
 
@@ -904,6 +906,10 @@ uint64_t execute_one_instruction()
  //   if (pc == 0x800017c4) DebugBreak();
 
     // fetch instruction 
+    if (pc & 0x3 != 0) {
+        interrupt = INTR_INSTR_MISALIGN;
+        return 1;
+    }
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
 //    printf("pc=0x%lx , instr=0x%x\n", pc, instr);
@@ -941,7 +947,9 @@ uint64_t execute_one_instruction()
     case OP_LUI: lui_op(rd, imm20);  break;
     case OP_ECALL: next_pc = ecall_op(sub3, sub7, rs1, rd, imm12); break;
     case OP_FENCEI: break; // TODO: don't need to anything until we have cache or pipeline
-    case OP_A: if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); else atomic32_op(sub7, rd, rs1, rs2); break;  // fault for other sub3
+    case OP_A: 
+        if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); 
+        else atomic32_op(sub7, rd, rs1, rs2); break;  // fault for other sub3
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
 
@@ -960,6 +968,8 @@ uint64_t execute_interrupt(uint64_t interrupt)
     uint64_t interrupt_delegate = read_CSR(CSR_MIDELEG);
     int delegated = 0;
 
+
+    // TODO: delegated interrupts should check sie
     if (interrupt & 0x8000000000000000) {
         int interrupt_no = interrupt & 0x7fffffff;
         if (interrupt_no!=3 && interrupt_no!=7 && interrupt_no!=11) 
@@ -1006,9 +1016,9 @@ int execute_code()
         interrupt = 0xffffffffffffffff;     // NOTE: 0 is valid interrupt
         no_cycles++;
 
-        // run clint every 1024 instructions
+        // run SoC every 1024 instructions
         if ((no_cycles & 0x3ff) == 0) {
-            interrupt = run_clint();
+            interrupt = soc_tick();
         } 
 
         // 4 combination of interrupt & wfi  
@@ -1024,6 +1034,7 @@ int execute_code()
         if (interrupt!=0xffffffffffffffff) {
             next_pc = execute_interrupt(interrupt);
         }
+        // TODO: move into execute_one_instruction?
         if (next_pc == -1) next_pc = pc + 4;    // next instruction if there is no jump; only executed for !intetrrupt&&!wfi case
         pc = next_pc;
     }

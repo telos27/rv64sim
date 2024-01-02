@@ -60,7 +60,7 @@
 #define INTR_SEXTERNAL ((1LL<<63)|9)
 #define INTR_MTIMER ((1LL<<63) | 7)
 #define INTR_MEXTERNAL ((1LL<<63) | 0xb)
-#define INT_INSTR_MISALIGN 0x0
+#define INTR_INSTR_MISALIGN 0x0
 #define INT_INSTR_ACCESS 0x1
 #define INT_ILLEGAL_INSTR 0x2
 #define INT_BREAKPOINT 0x3
@@ -143,5 +143,5 @@ uint32_t io_read(uint64_t addr, uint64_t* data);
 uint32_t io_write(uint64_t addr, uint64_t* data);
 
 uint32_t init_clint();
-uint64_t run_clint();
+uint64_t soc_tick();
 uint64_t get_microseconds();

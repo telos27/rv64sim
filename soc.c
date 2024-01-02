@@ -412,10 +412,39 @@ if (is_escape_sequence)
 
 static uint64_t last_time = 0;		// last time when we updated the timer, initialized in init_clint()
 
-// CLINT: check to see if we should generate a timer interrupt
-// return value: timer interrupt, 0 if no interrupt
-// increment timer and also see if we've exceeded threshold
-uint64_t run_clint()
+void timer_tick()
+{
+	// update timer based on the current time
+	uint64_t elapsed_time = get_microseconds() - last_time;
+	last_time += elapsed_time;
+	timer += elapsed_time;
+	//	printf("timer=%ld\n", timer);
+}
+
+void uart_tick()
+{
+
+}
+
+void virtio_tick()
+{
+
+}
+
+// SoC: check to see if we should generate an interrupt
+// return value: interrupt, 0 if no interrupt
+// interrupt rules: 
+// 1. CLINT responsible for setting MTIP, cleared by settting TIMERCMP
+// 2. PLIC responsible for setting SEIP (expected by xv6, in real world should be dependent on where PLIC is hooked up, the
+//		PLIC spec is kind of confusing, and the diagram shows two signal lines for M/S mode, apparently it depends on the
+//		delegation as well, we'l use SEIP for now), cleared by writing to PLIC completion register(same as CLAIM register)
+// 3. SSIP set by software or external hart, cleared by software/external hart; no automatic change
+// 4. traps in M-mode or (!delegated in S/U) mode go to M hanlder
+// 5. traps in S/U mode and delegatd go to S handler
+// 6. traps are always taken regardless of enable bits?
+// 7. interrupts are only taken when both status and ie bits are set?
+//
+uint64_t soc_tick()
 {
 	uint64_t gen_interrupt = 0xffffffffffffffff;
 
@@ -423,7 +452,11 @@ uint64_t run_clint()
 
 	uint64_t mip, mie, mstatus;
 	// check for external interrupt
+
 	run_plic();
+	timer_tick();
+	uart_tick();
+	virtio_tick();
 
 	mstatus = read_CSR(CSR_MSTATUS);
 	mip = read_CSR(CSR_MIP);
@@ -433,11 +466,6 @@ uint64_t run_clint()
 		return gen_interrupt;
 	}
 
-	// update timer based on the current time
-	elapsed_time = get_microseconds() - last_time;
-	last_time += elapsed_time;
-	timer += elapsed_time;
-//	printf("timer=%ld\n", timer);
 
 	// compare timer and set interrupt pending info
 	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
@@ -473,9 +501,14 @@ uint64_t run_clint()
 	}
 
 
+	// SSI
 	// TODO: why would this remove the SSI interrupt?
 	// generate interrupt only if all three conditions are met:
 	// SIP.SEIP , SIE.MEIE , SSTATUS.SIE
+	sstatus = read_CSR(CSR_SSTATUS);
+	sip = read_CSR(CSR_SIP);
+	sie = read_CSR(CSR_SIE);
+	
 	if ((sip & CSR_SIP_SEIP) && (sie & CSR_SIE_SEIE) && ((sstatus & CSR_SSTATUS_SIE) && mode != MODE_M)) {
 		gen_interrupt = INTR_SEXTERNAL;
 		return gen_interrupt;
@@ -484,9 +517,7 @@ uint64_t run_clint()
 	// SSI
 	
 	/*
-	sstatus = read_CSR(CSR_SSTATUS);
-	sip = read_CSR(CSR_SIP);
-	sie = read_CSR(CSR_SIE);
+	
 	*/
 
 
