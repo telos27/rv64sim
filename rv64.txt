@@ -96,13 +96,12 @@ Current status:
 	* now illegal instruction for ls, loaded incorrectly or got corrupted?
 	* main areas left
 		* uart
-		* timer
-		* interrupts
 		* slowness: unnecessary waiting? race conditions? pipe in shell sometimes hangs 
 			(loading two new processes that haven't been run before?)
 	* almost there
 	* ls was due to incorrect immediate extension when doing xori
 	* now it's basically working, need a lot of cleanup
+	* cleaned up timer and interrupts
 	* 
 
 xv6 logic

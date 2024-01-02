@@ -952,7 +952,7 @@ uint64_t execute_one_instruction()
         else atomic32_op(sub7, rd, rs1, rs2); break;  // fault for other sub3
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
-
+    if (next_pc == -1) next_pc = pc + 4;    // next instruction if there is no jump
     return next_pc;
 }
 
@@ -1049,7 +1049,7 @@ int execute_code()
     uint64_t next_pc;
 
     for (;;) {
-        next_pc = -1;  // assume no jump
+        next_pc = pc ;  // assume no jump
         interrupt = 0xffffffffffffffff;     // NOTE: 0 is valid interrupt
         no_cycles++;
 
@@ -1062,19 +1062,12 @@ int execute_code()
 
         // 4 combination of interrupt & wfi  
         if (interrupt==0xffffffffffffffff) {   // if no interrupt; if there is interrupt, will execute the interrupt-handling code following this if
-            if (wfi) {
-                continue ;   // loop back to see if there is pending interrupt, specifically skip the pc increment
-            }
-            else {
-                next_pc = execute_one_instruction();    // does not change any state except for what is defined in the instruction
-            }
+            if (!wfi) next_pc = execute_one_instruction();    // does not change any state except for what is defined in the instruction
         }
-        // NOTE: mie already checked when generating interrupt
         if (interrupt!=0xffffffffffffffff) {
             next_pc = execute_interrupt(interrupt);
         }
-        // TODO: move into execute_one_instruction?
-        if (next_pc == -1) next_pc = pc + 4;    // next instruction if there is no jump; only executed for !intetrrupt&&!wfi case
+   
         pc = next_pc;
     }
 }
