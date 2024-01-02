@@ -142,6 +142,6 @@ extern uint8_t* vio_disk;
 uint32_t io_read(uint64_t addr, uint64_t* data);
 uint32_t io_write(uint64_t addr, uint64_t* data);
 
-uint32_t init_clint();
+uint32_t init_soc();
 uint64_t soc_tick();
 uint64_t get_microseconds();

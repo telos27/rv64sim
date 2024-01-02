@@ -21,6 +21,22 @@ static uint64_t uart_interrupt_pending;
 
 // virtio state
 static uint64_t virtio_interrupt_pending;
+// virtio implementation here is written to fit with xv6 and legacy mode in qemu?
+// biggest difference with recent virtio spec is single pfn vs. three descriptor addresses
+#define VIO_QUEUE_SIZE 8
+#define SECTOR_SIZE 512
+
+#define VRING_DESC_F_NEXT  1 // chained with another descriptor
+#define VRING_DESC_F_WRITE 2 // device writes (vs read)
+
+static uint32_t vio_queue_num;
+static uint64_t vio_queue_desc, vio_driver_desc, vio_device_desc;
+static uint32_t vio_queue_align;
+static uint32_t vio_status;
+static uint32_t vio_queue_notify = UINT32_MAX;
+static uint32_t vio_queue_ready;
+static uint64_t vio_used_idx;	// matches virtq.used.idx
+uint8_t* vio_disk;	// disk space, allocated in init
 
 // PLIC state
 static uint32_t plic_priority[128];
@@ -34,14 +50,14 @@ static uint32_t plic_threshold, plic_claim;
 void debug_syscall()
 {
 
-	int call_no = read_reg(5);
+	uint64_t call_no = read_reg(5);
 
 	switch (call_no) {
-	case 1: printf("total_cycles = %ld", no_cycles); exit(0); break;
+	case 1: printf("total_cycles = %lld", no_cycles); exit(0); break;
 	case 10:
-		printf("0x%lx ", pc);
+		printf("0x%llx ", pc);
 		for (int i = 1; i < 32; i++) {
-			printf("0x%lx ", read_reg(i));
+			printf("0x%llx ", read_reg(i));
 		}
 		printf("\n");
 		break;
@@ -71,6 +87,7 @@ uint32_t plic_read(uint64_t addr, uint64_t* data)
 	} else {
 		assert(0);
 	}
+	return 0;
 }
 
 
@@ -94,9 +111,32 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 	} else {
 		assert(0);
 	}
-
+	return 0;
 }
 
+
+static uint64_t last_time = 0;		// last time when we updated the timer, initialized in init_clint()
+
+void timer_tick()
+{
+	// update timer based on the current time
+	uint64_t elapsed_time = get_microseconds() - last_time;
+	last_time += elapsed_time;
+	timer += elapsed_time;
+	//	printf("timer=%ld\n", timer);
+
+	// compare timer and set interrupt pending info
+	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
+	uint64_t mip = read_CSR(CSR_MIP);
+	if (timer > timer_match) {	// timer_match set (if not set, >= would sitll hold) and current time>=timer_match
+		wfi = 0;
+		write_CSR(CSR_MIP, mip | CSR_MIP_MTIP);
+	}
+	else {
+		// TODO: ok to reset here? 
+		write_CSR(CSR_MIP, mip & ~((uint32_t)CSR_MIP_MTIP));
+	}
+}
 
 // valid when uart_interrupt_pending
 static char uart_saved_char;
@@ -115,6 +155,17 @@ int uart_tick()
 }
 
 
+// If there has been a notify, generate an interrupt and process the request
+uint32_t vio_interrupt_pending()
+{
+	if (vio_queue_notify != UINT_MAX) {
+		vio_queue_notify = UINT_MAX;
+		return TRUE;
+	}
+	else {
+		return FALSE;
+	}
+}
 
 int plic_tick()
 {
@@ -138,32 +189,18 @@ int plic_tick()
 }
 
 
-// virtio implementation here is written to fit with xv6 and legacy mode in qemu?
-// biggest difference with recent virtio spec is single pfn vs. three descriptor addresses
-#define VIO_QUEUE_SIZE 8
-#define SECTOR_SIZE 512
 
-#define VRING_DESC_F_NEXT  1 // chained with another descriptor
-#define VRING_DESC_F_WRITE 2 // device writes (vs read)
-
-static uint32_t vio_queue_num;
-static uint64_t vio_queue_desc, vio_driver_desc, vio_device_desc;
-static uint32_t vio_queue_align;
-static uint32_t vio_status;
-static uint32_t vio_queue_notify = UINT32_MAX;
-static uint32_t vio_queue_ready;
-static uint64_t vio_used_idx;	// matches virtq.used.idx
-uint8_t* vio_disk;	// disk space, allocated in init
 
 uint32_t init_vio()
 {
 	// empty right now
 	vio_disk = malloc(64 * 1024 * 1024);	// 64M disk
+	return 0;
 }
 
 uint32_t vio_read(uint64_t addr, uint64_t* data)
 {
-	uint32_t offset = addr - IO_VIRTIO_START;
+	uint32_t offset = (uint32_t) (addr - IO_VIRTIO_START);
 	switch (offset) {
 	case VIRTIO_STATUS: *data = vio_status; break;
 	case VIRTIO_MAGIC_VALUE: *data = 0x74726976; break;
@@ -176,12 +213,13 @@ uint32_t vio_read(uint64_t addr, uint64_t* data)
 	case VIRTIO_INTERRUPT_STATUS: *data = 1; break;		// should be ok
 	default: assert(0);		// unsupported I/O register
 	}
+	return 0;
 }
 
 
 uint32_t vio_write(uint64_t addr, uint64_t* data)
 {
-	uint32_t offset = addr - IO_VIRTIO_START;
+	uint32_t offset = (uint32_t) (addr - IO_VIRTIO_START);
 	switch (offset) {
 	case VIRTIO_STATUS: {
 		vio_status = (uint32_t) *data;	// vs. rvemu; I don't think needed for xv6
@@ -202,23 +240,14 @@ uint32_t vio_write(uint64_t addr, uint64_t* data)
 	case VIRTIO_QUEUE_NOTIFY: vio_queue_notify = (uint32_t)*data; break;
 	default: assert(0);		// unsupported I/O register
 	}
+	return 0;
 }
 
-// If there has been a notify, generate an interrupt and process the request
-uint32_t vio_interrupt_pending()
-{
-	if (vio_queue_notify != UINT_MAX) {
-		vio_queue_notify = UINT_MAX;
-		return TRUE;
-	}
-	else {
-		return FALSE;
-	}
-}
 
-vio_disk_access()
+
+int vio_disk_access()
 {
-	uint64_t mem_data;
+	uint64_t mem_data, interrupt;
 	// read 3 descriptors from virtual queue
 
 	// address of virt queue
@@ -227,41 +256,41 @@ vio_disk_access()
 	// address of avail 
 	uint64_t avail = vio_driver_desc;	
 	uint16_t avail_idx;
-	pa_mem_interface(MEM_READ, avail + 2, MEM_HALFWORD, &mem_data);	// read avail.idx
+	pa_mem_interface(MEM_READ, avail + 2, MEM_HALFWORD, &mem_data , &interrupt);	// read avail.idx
 	avail_idx = ((uint16_t)mem_data-1) % VIO_QUEUE_SIZE;
 	//printf("avail_idx=%d\n", avail_idx);
 
 	uint64_t head_index;
-	pa_mem_interface(MEM_READ , avail+4 + avail_idx*2 , MEM_HALFWORD , &head_index);	
+	pa_mem_interface(MEM_READ , avail+4 + avail_idx*2 , MEM_HALFWORD , &head_index , &interrupt);	
 
 	uint64_t desc0_addr;
-	pa_mem_interface(MEM_READ, virtq + 16 * head_index, MEM_DWORD, &desc0_addr);
+	pa_mem_interface(MEM_READ, virtq + 16 * head_index, MEM_DWORD, &desc0_addr, &interrupt);
 
 	uint64_t sector;
-	pa_mem_interface(MEM_READ, desc0_addr + 8, MEM_DWORD, &sector);		// LSB
+	pa_mem_interface(MEM_READ, desc0_addr + 8, MEM_DWORD, &sector, &interrupt);		// LSB
 
 	uint64_t desc0_next;	// index for desc1
-	pa_mem_interface(MEM_READ, virtq + 16 * head_index + 14, MEM_HALFWORD, &desc0_next);
+	pa_mem_interface(MEM_READ, virtq + 16 * head_index + 14, MEM_HALFWORD, &desc0_next, &interrupt);
 
 	uint64_t desc1_addr;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next , MEM_DWORD, &desc1_addr);
+	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next , MEM_DWORD, &desc1_addr, &interrupt);
 
 	uint64_t desc1_len;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 8, MEM_WORD, &desc1_len);
+	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 8, MEM_WORD, &desc1_len, &interrupt);
 
 	uint64_t desc1_flags;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 12, MEM_HALFWORD, &desc1_flags);
+	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 12, MEM_HALFWORD, &desc1_flags, &interrupt);
 
 	uint64_t desc1_next;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 14, MEM_HALFWORD, &desc1_next);
+	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 14, MEM_HALFWORD, &desc1_next, &interrupt);
 
 	uint64_t data;	// only 1 byte used
 
 	// NOTE: write means device writes to buffer, which is actually a disk read
 	if ((desc1_flags & VRING_DESC_F_WRITE)==0) {
 		for (int i = 0; i < desc1_len; i++) {
-			pa_mem_interface(MEM_READ, desc1_addr + i, MEM_BYTE , &data);
-			vio_disk[sector * SECTOR_SIZE + i] = data;
+			pa_mem_interface(MEM_READ, desc1_addr + i, MEM_BYTE , &data, &interrupt);
+			vio_disk[sector * SECTOR_SIZE + i] = (uint8_t) data;
 			
 		}
 	//	printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
@@ -269,7 +298,7 @@ vio_disk_access()
 	else {
 		for (int i = 0; i < desc1_len; i++) {
 			data = vio_disk[sector * SECTOR_SIZE + i];
-			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data);
+			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data, &interrupt);
 //			printf("vio read: mem[%llx] = %d\n", desc1_addr + i, (uint32_t)data);
 		}
 	//	printf("vio: sector %ld -> [0x%llx], len=%d\n", sector , desc1_addr, desc1_len);
@@ -277,22 +306,23 @@ vio_disk_access()
 
 	// set desc2's block to zero to mean completion
 	uint64_t desc2_addr;
-	pa_mem_interface(MEM_READ, virtq + 16 * desc1_next, MEM_DWORD, &desc2_addr);
+	pa_mem_interface(MEM_READ, virtq + 16 * desc1_next, MEM_DWORD, &desc2_addr, &interrupt);
 
 	data = 0;
-	pa_mem_interface(MEM_WRITE, desc2_addr, MEM_BYTE, &data);
+	pa_mem_interface(MEM_WRITE, desc2_addr, MEM_BYTE, &data, &interrupt);
 
 	// update used
 	// address of used
 	uint64_t used = vio_device_desc ;	
 
 	// update used.idx; 
-	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, &head_index);
+	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, &head_index, &interrupt);
 
 	// update used.idx; vio_used_idx is same as used.idx
 	// TODO: 16-bit wraparound?
 	vio_used_idx = (vio_used_idx + 1);
-	pa_mem_interface(MEM_WRITE, used + 2, MEM_HALFWORD, &vio_used_idx);
+	pa_mem_interface(MEM_WRITE, used + 2, MEM_HALFWORD, &vio_used_idx, &interrupt);
+	return 0;
 }
 
 
@@ -307,7 +337,7 @@ uint32_t io_read(uint64_t addr, uint64_t *data)
 	}
 	switch (addr) {
 		case IO_CLINT_TIMERL: *data = timer; break;
-		case IO_CLINT_TIMERMATCHL: *data = timer_match; break;
+		case IO_CLINT_TIMERMATCHL: *data = timer_match; break;		// turn off timer interrupt
 		// emulate UART behavior: different between 32-bit non-MMU Linux and xv6
 		case IO_UART_DATA: *data = uart_interrupt_pending ? uart_saved_char : 0; uart_interrupt_pending = 0;break;
 		case IO_UART_INTRENABLE: *data = uart_interrupt; break;  // should not be readable, but Linux seems to read it
@@ -333,9 +363,9 @@ uint32_t io_write(uint64_t addr, uint64_t* data)
 	switch (addr) {
 	//	case IO_CLINT_TIMERL: timer_l = *data; break;
 	//	case IO_CLINT_TIMERH: timer_h = *data; break;
-	case IO_CLINT_TIMERMATCHL: timer_match = *data; /*printf("timer match=%llu, time=%llu\n", timer_match, timer);*/ break;
+	case IO_CLINT_TIMERMATCHL: timer_match = *data; timer_tick();/*printf("timer match=%llu, time=%llu\n", timer_match, timer); */break;
 		// emulate UART behavior; LCR and FCR write should be ok
-		case IO_UART_DATA: printf("%c", *data); fflush(stdout); break ;
+		case IO_UART_DATA: printf("%c",(int) *data); fflush(stdout); break ;
 		case IO_UART_INTRENABLE: uart_interrupt = *data; break;
 		case IO_UART_LINECTRL: break;
 		case IO_UART_FIFOCTRL: break;
@@ -408,28 +438,6 @@ if (is_escape_sequence)
 }
 
 
-static uint64_t last_time = 0;		// last time when we updated the timer, initialized in init_clint()
-
-void timer_tick()
-{
-	// update timer based on the current time
-	uint64_t elapsed_time = get_microseconds() - last_time;
-	last_time += elapsed_time;
-	timer += elapsed_time;
-	//	printf("timer=%ld\n", timer);
-
-	// compare timer and set interrupt pending info
-	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
-	uint64_t mip = read_CSR(CSR_MIP);
-	if (timer > timer_match) {	// timer_match set (if not set, >= would sitll hold) and current time>=timer_match
-		wfi = 0;
-		write_CSR(CSR_MIP, mip | CSR_MIP_MTIP);
-	}
-	else {
-		// TODO: ok to reset here? 
-		write_CSR(CSR_MIP, mip & ~((uint32_t)CSR_MIP_MTIP));
-	}
-}
 
 void virtio_tick()
 {
@@ -454,5 +462,6 @@ uint32_t init_soc()
 
 	// init_plic();
 	init_vio();
+	return 0;
 }
 

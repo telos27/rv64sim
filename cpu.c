@@ -240,7 +240,7 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
             // TODO: check U & SUM & MXR
 
             // check superpage alignment: the last segments of the PPN should all be 0
-            if (((i == 0) && (((result & VPN_SEG2) != 0) || (result & VPN_SEG3 != 0))) || 
+            if (((i == 0) && (((result & VPN_SEG2) != 0) || ((result & VPN_SEG3) != 0))) || 
                 ((i==1) && ((result & VPN_SEG3) !=0))) {
                 *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
                 return 0;
@@ -710,7 +710,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             // mie = mpie ; mpie=1 ; spp = mode[0]
             write_CSR(CSR_SSTATUS, ((prev_mode&1) << 8) | CSR_SSTATUS_SPIE | ((sstatus & CSR_SSTATUS_SPIE) >> 4));
             uint64_t next_pc = read_CSR(CSR_SEPC);
-  //         printf("SRET: pc=0x%llx, cycles=0x%llx , next_pc=0x%llx\n", pc, no_cycles , next_pc);
+ //         printf("SRET: pc=0x%llx, cycles=0x%llx , next_pc=0x%llx\n", pc, no_cycles , next_pc);
             return next_pc;
         }
         case ECALL_WFI: {
@@ -726,56 +726,56 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
     // NOTE: order of register read/write as rd&rs1 can be the same register; special cases when register number is 0
     // atomic read CSR into rd and write CSR from rs1
     case SYSTEM_CSRRW: {
-        uint64_t new_value = read_reg(rs1);
+        uint64_t new_value = read_reg((int)rs1);
         // if x0, do not read CSR, but still write CSR
         if (rd != 0) {
-            write_reg(rd, read_CSR(imm12));
+            write_reg((int)rd, read_CSR((int)imm12));
         }
         uint64_t time;
         io_read(IO_CLINT_TIMERL, &time);
         //printf("%ld:CSRRW@0x%lx ,  [0x%x]=0x%x , prev=0x%x\n", time , pc , imm12, new_value , regs[rd]);
-        write_CSR(imm12, new_value);
+        write_CSR((int)imm12, new_value);
         break;
     }
     case SYSTEM_CSRRS: {
-        uint64_t new_value = read_reg(rs1);
-        uint64_t value = read_CSR(imm12);
-        write_reg(rd, value);
+        uint64_t new_value = read_reg((int)rs1);
+        uint64_t value = read_CSR((int)imm12);
+        write_reg((int)rd, value);
         if (rs1 != 0) {
-            write_CSR(imm12, value | new_value);    // TODO: unsettable bits?
+            write_CSR((int)imm12, value | new_value);    // TODO: unsettable bits?
         }
         break;
     }
     case SYSTEM_CSRRC: {
-        uint64_t new_value = read_reg(rs1);
-        uint64_t value = read_CSR(imm12);
-        write_reg(rd, value);
+        uint64_t new_value = read_reg((int)rs1);
+        uint64_t value = read_CSR((int)imm12);
+        write_reg((int)rd, value);
         if (rs1 != 0) {
-            write_CSR(imm12, value & ~new_value);    // TODO: unsettable bits?
+            write_CSR((int)imm12, value & ~new_value);    // TODO: unsettable bits?
         }
         break;
     }
     case SYSTEM_CSRRWI: {
         // if x0, do not read CSR, but still write CSR
         if (rd != 0) {
-            write_reg(rd, read_CSR(imm12));
+            write_reg((int)rd, read_CSR((int)imm12));
         }
-        write_CSR(imm12, rs1);  // rs1 is imm5
+        write_CSR((int)imm12, rs1);  // rs1 is imm5
         break;
     }
     case SYSTEM_CSRRSI: {
-        uint64_t value = read_CSR(imm12);
-        write_reg(rd, value);
+        uint64_t value = read_CSR((int)imm12);
+        write_reg((int)rd, value);
         if (rs1 != 0) {
-            write_CSR(imm12, value | rs1);    // TODO: unsettable bits?
+            write_CSR((int)imm12, value | rs1);    // TODO: unsettable bits?
         }
         break;
     }
     case SYSTEM_CSRRCI: {
-        uint64_t value = read_CSR(imm12);
-            write_reg(rd, value);
+        uint64_t value = read_CSR((int)imm12);
+            write_reg((int)rd, value);
         if (rs1 != 0) {
-            write_CSR(imm12, value & ~rs1);    // TODO: unsettable bits?
+            write_CSR((int)imm12, value & ~rs1);    // TODO: unsettable bits?
         }
         break;
     }
@@ -848,7 +848,7 @@ void atomic32_op(int sub7, int rd, int rs1, int rs2)
     if (!lrsc) {
         rw_memory(MEM_READ, addr, MEM_WORD, &mem_data);    // one piece of data in memory 
         data = (uint32_t)mem_data;
-        data2 = read_reg(rs2);  // the other piece in register
+        data2 = (uint32_t)read_reg(rs2);  // the other piece in register
     }
 
     switch (sub7 >> 4) {
@@ -906,7 +906,7 @@ uint64_t execute_one_instruction()
  //   if (pc == 0x800017c4) DebugBreak();
 
     // fetch instruction 
-    if (pc & 0x3 != 0) {
+    if ((pc & 0x3) != 0) {
         interrupt = INTR_INSTR_MISALIGN;
         return 1;
     }
@@ -1011,10 +1011,10 @@ uint64_t execute_interrupt(uint64_t interrupt)
     if (interrupt & 0x8000000000000000) {
         int interrupt_no = interrupt & 0x7fffffff;
         if (interrupt_no!=3 && interrupt_no!=7 && interrupt_no!=11) 
-            delegated = (interrupt_no < 32) && (interrupt_delegate & (1 << interrupt_no));
+            delegated = (interrupt_no < 32) && (interrupt_delegate & (1LL << interrupt_no));
     }
     else {
-        delegated = (interrupt < 32) && (exception_delegate & (1 << interrupt));
+        delegated = (interrupt < 32) && (exception_delegate & (1LL << interrupt));
     }
 
     // default is M mode
@@ -1026,7 +1026,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_MEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_M; // switch to M mode ;
         result = read_CSR(CSR_MTVEC);  // jump to interrupt routine, no vectoring support yet
- //       printf("[time=0x%lxus]M INTR: pc=%lx , interrupt=%x:%x, next = % lx\n", 
+ //       printf("[time=0x%lldus]M INTR: pc=%lx , interrupt=%x:%x, next = % lx\n", 
  //         (uint64_t)get_microseconds() , pc, interrupt>>32 , interrupt&0xffffffff, result);
     }
     else {  // trap to S mode
@@ -1037,7 +1037,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_S; // switch to S mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet
-//       printf("[time=0x%llxus]S INTR: pc=%llx , interrupt=%x:%x , next=%llx\n", (uint64_t)get_microseconds() , pc,
+//      printf("[time=0x%lldus]S INTR: pc=%llx , interrupt=%x:%x , next=%llx\n", (uint64_t)get_microseconds() , pc,
 //            interrupt >> 32, interrupt & 0xffffffff, result);
     }
     return result;

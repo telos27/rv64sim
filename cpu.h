@@ -30,5 +30,10 @@ extern uint64_t no_cycles;
 extern uint8_t mem[];   // main memory
 
 extern int init_cpu(uint64_t start_pc);
-extern int pa_mem_interface(uint32_t mem_mode, unsigned int addr, int size, unsigned int* data);
+extern int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data , uint64_t* interrupt);
+extern uint64_t read_reg(int reg_no);
+extern int write_reg(int reg_no, uint64_t data);
+extern uint64_t read_CSR(int CSR_no);
+extern uint64_t write_CSR(int CSR_no, uint64_t value);
+extern int execute_code();
 

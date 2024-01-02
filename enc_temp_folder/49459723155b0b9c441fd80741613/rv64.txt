@@ -106,7 +106,6 @@ Current status:
 	* MTIMER is being turned into SSOFTWARE although it's 2:1
 	* fixed, now it's running correctly at 0.1s per tick and one M interrupt and then one S interrupt
 	* cleaned up a bunch of warnings, but release mode still hangs, memory problem?
-	* if I turn off -O2, it works
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()
