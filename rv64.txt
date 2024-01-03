@@ -123,9 +123,12 @@ Current status:
 		* echo a|wc: 17 locked but didn't unlock, it seems to be blocked somewhere before unlock
 		* ls|wc & echo a|wc both seem to be related to lock 17
 		* running ls|wc for the second time: 3 ilock 17; sequence is different?
-		* wc 
 		* finally found the problem: the used-index forgot to be mod queue size when it was used to write an entry
-	* 
+	* one more bug: ls >t keeps on writing disk forever, other commands like cat, echo and grep work properly
+	* now it at least finishes, but is surprisingly slow, should be faster; but it's kind of slow in qemu as well
+		it does seem to incur more disk writes than it should; overall speed is still much slower than qemu, which doesn't
+		seem right
+
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()

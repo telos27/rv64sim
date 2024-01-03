@@ -141,17 +141,19 @@ void timer_tick()
 
 // valid when uart_interrupt_pending
 static char uart_saved_char;
+static unsigned int uart_tick_count;
 
 int uart_tick()
 {
+
 	// do read when the buffer is empty
 	if (!uart_interrupt_pending) {
-		if (IsKBHit()) {
+		if (((uart_tick_count&0xff)==0) &&IsKBHit()) {
 			uart_saved_char = ReadKBByte();
 			uart_interrupt_pending = 1;
 		}
 	}
-
+	uart_tick_count++;
 	return 0;
 }
 
