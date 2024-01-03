@@ -96,8 +96,8 @@ Current status:
 	* now illegal instruction for ls, loaded incorrectly or got corrupted?
 	* main areas left
 		* uart
-		* slowness: unnecessary waiting? race conditions? pipe in shell sometimes hangs 
-			(loading two new processes that haven't been run before?)
+		* ls >ls.out hangs
+		* slowness: unnecessary waiting? race conditions?
 	* almost there
 	* ls was due to incorrect immediate extension when doing xori
 	* now it's basically working, need a lot of cleanup
@@ -108,7 +108,24 @@ Current status:
 	* if I turn off -O2, it works; it doesn't even get to the point where it prints "xv6 is booting"
 	* it's actually stuck a few just a few instructions, at jalr (0x1c)
 	* bug in sign_extend(), again 64 bit vs 32 bit
-	* ok now?
+	* ok now? should be ok
+	* debug ls | wc issue:
+		* virtio notify and PLIC complete seem to match ok
+		* ls 5 disk io(532, 540-546), then another ls 0 disk io, then ls|wc another 5 disk io
+		* ls|wc 6 disk io(532, 540, 1366, 542-546) then hangs, feels like a race condition or incorrect blocking somewhere
+		* ls|wc after ls 5 disk io(1366, 1374-1380)
+		* so it looks like the second read for wc wasn't issued
+		* looks like a lock problem? inode 17? unable to acquire inode 17 lock since it's already locked
+		* ls | wc: stuck trying to acquire inode lock 17 because it's already locked
+		* ls: ilock 17, ilock 17 (when it reads the wc entry?)
+		* wc: ilock 17, no lock 4
+		* echo: lock 4
+		* echo a|wc: 17 locked but didn't unlock, it seems to be blocked somewhere before unlock
+		* ls|wc & echo a|wc both seem to be related to lock 17
+		* running ls|wc for the second time: 3 ilock 17; sequence is different?
+		* wc 
+		* finally found the problem: the used-index forgot to be mod queue size when it was used to write an entry
+	* 
 
 xv6 logic
 	* scheduler(): finds a runnable process and swtch()

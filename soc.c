@@ -108,6 +108,7 @@ uint32_t plic_write(uint64_t addr, uint64_t* data)
 		*p &= ~(1 << (*data & 0x1f));
 		uint64_t sip = read_CSR(CSR_SIP);
 		write_CSR(CSR_SIP, sip & (~CSR_SIP_SEIP));
+		//printf("write PLIC_COMPLETE = %d\n", *data);
 		plic_claim = 0 ;		// TODO: should be next pending interrupt? current way only works if there is single pending interrupt
 	} else {
 		assert(0);
@@ -237,7 +238,7 @@ uint32_t vio_write(uint64_t addr, uint64_t* data)
 	case VIRTIO_DEVICE_DESC_LOW: vio_device_desc = (vio_device_desc & 0xffffffff00000000) | *data; break;
 	case VIRTIO_DEVICE_DESC_HIGH: vio_device_desc = (vio_device_desc & 0xffffffff) | (*data << 32); break;
 	case VIRTIO_QUEUE_READY: vio_queue_ready = (uint32_t)*data; break;
-	case VIRTIO_QUEUE_NOTIFY: vio_queue_notify = (uint32_t)*data; break;
+	case VIRTIO_QUEUE_NOTIFY: vio_queue_notify = (uint32_t)*data; /*printf("virtio notify\n"); */ break;
 	default: assert(0);		// unsupported I/O register
 	}
 	return 0;
@@ -295,7 +296,7 @@ int vio_disk_access()
 			vio_disk[sector * SECTOR_SIZE + i] = (uint8_t) data;
 			
 		}
-	//	printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
+//		printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
 	}
 	else {
 		for (int i = 0; i < desc1_len; i++) {
@@ -303,7 +304,7 @@ int vio_disk_access()
 			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data, &interrupt);
 //			printf("vio read: mem[%llx] = %d\n", desc1_addr + i, (uint32_t)data);
 		}
-	//	printf("vio: sector %ld -> [0x%llx], len=%d\n", sector , desc1_addr, desc1_len);
+//		printf("vio: sector %ld -> [0x%llx], len=%d\n", sector , desc1_addr, desc1_len);
 	}
 
 	// set desc2's block to zero to mean completion
@@ -318,7 +319,8 @@ int vio_disk_access()
 	uint64_t used = vio_device_desc ;	
 
 	// update used.idx; 
-	pa_mem_interface(MEM_WRITE, used + 4 + 8 * vio_used_idx, MEM_WORD, &head_index, &interrupt);
+	// NOTE: need to take mod
+	pa_mem_interface(MEM_WRITE, used + 4 + 8 * (vio_used_idx%VIO_QUEUE_SIZE), MEM_WORD, &head_index, &interrupt);
 
 	// update used.idx; vio_used_idx is same as used.idx
 	// TODO: 16-bit wraparound?
