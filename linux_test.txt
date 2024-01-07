@@ -3,11 +3,35 @@ Testing Linux under emulator
 1. build
   1.1 goal: linux setup that runs under qemu
   1.2 known: mini-rv32ima works: risc-v toolchain, buildroot, image runs under qemu
+    * fresh build doesn't quite work either, fs not quite right?
   1.3 tries
     1.3.1 modify mini-rv32ima buildroot config to 64bit
-      1.3.1.1 
+      1.3.1.1 it complains about -msoft-float option not recognized when building uclibc
     1.3.2 fresh buildroot build from source
-      * ubuntu, required pkgs, riscv-gnu-toolchain, buildroot
-      * can buildroot run without toolchain since it has its own?
-      1.3.2.1 builds but hangs on qemu
-      1.3.2.2 does not build
+    steps:
+      * wsl ubuntu 22.04.3LTS
+      * install required pkgs for tool chain
+      * git clone https://github.com/riscv/riscv-gnu-toolchain
+      * mkdir /opt/riscv; chmod a+w /opt/riscv
+      * ./configure --prefix=/opt/riscv --enable-multilib
+      * make linux
+      * git clone git://git.buildroot.net/buildroot
+      * git checkout 2023.11
+      * make qemu_riscv64_virt_defconfig
+      * make menuconfig (remove RISC-V F extension; uclibc; remove network interface;initramfs only; remove host-qemu); remove python, 
+      * make linux-menuconfig (sysV IPC, remove all SoCs) 
+      * make
+      * cd output/images ; ./start-qemu.sh
+    config files:
+      * buildroot
+      * kernel
+      * busybox
+      * uclibc
+    status
+      * it runs fine now, but it use OpenSBI, glibc, ext2 fs etc.
+      * doesn't run without OpenSBI, just hang w/ -bios none -kernel Image
+      * try with initramfs, works now, although qemu was still built
+      * 
+    issues
+      * add OpenSBI option after no selection at first doesn't produce the firmware files
+      * can buildroot run without toolchain since it has its own
