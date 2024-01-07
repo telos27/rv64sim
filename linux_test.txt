@@ -18,7 +18,7 @@ Testing Linux under emulator
       * git clone git://git.buildroot.net/buildroot
       * git checkout 2023.11
       * make qemu_riscv64_virt_defconfig
-      * make menuconfig (remove RISC-V F extension; uclibc; remove network interface;initramfs only; remove host-qemu); remove python, 
+      * make menuconfig (remove RISC-V F extension; uclibc;kernel config file; remove network interface;initramfs only; remove host-qemu); remove python, 
       * make linux-menuconfig (sysV IPC, remove all SoCs) 
       * make
       * cd output/images ; ./start-qemu.sh
@@ -31,12 +31,19 @@ Testing Linux under emulator
       * it runs fine now, but it use OpenSBI, glibc, ext2 fs etc.
       * doesn't run without OpenSBI, just hang w/ -bios none -kernel Image
       * try with initramfs, works now, although qemu was still built
-      * 
+      * kernel is built with C instructions; can not change it through menuconfig; manual editing of config file doesn't seem to work either
     issues
+      * lots of issues with buildroot
       * add OpenSBI option after no selection at first doesn't produce the firmware files
       * can buildroot run without toolchain since it has its own
 2. Testing
   * load address for OpenSBI and Image:
-    * qemu: OpenSBI: 0x2000000 (64M, virt machine), kernel: after OpenSBI (2MB aligned); dtb
+    * qemu: OpenSBI: 0x20000000 (64M, virt machine), kernel: after OpenSBI (2MB aligned, should be 0x20200000); dtb
     * fw_dynamic_info structure is used to pass the kernel address, OpenSBI uses this structure to start the kernel, where should this be located?
-    *
+    * linux builds with compressed instructions although buildroots option has no C, and it can not be turned off in the kernel config
+3. Other info
+  * u-root: very simple boot system, sufficient to run together with a kernel?
+  * kernel expects to be in S-mode, so SBI or equivalent unavoidable?
+  * https://github.com/franzflasch/riscv_em: 32-bit MMU and 64-bit noMMU emulator, can run Linux, had patches for buildroot/linux/opensbi
+
+    
