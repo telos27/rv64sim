@@ -35,3 +35,8 @@ Testing Linux under emulator
     issues
       * add OpenSBI option after no selection at first doesn't produce the firmware files
       * can buildroot run without toolchain since it has its own
+2. Testing
+  * load address for OpenSBI and Image:
+    * qemu: OpenSBI: 0x2000000 (64M, virt machine), kernel: after OpenSBI (2MB aligned); dtb
+    * fw_dynamic_info structure is used to pass the kernel address, OpenSBI uses this structure to start the kernel, where should this be located?
+    *
