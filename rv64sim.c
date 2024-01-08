@@ -24,7 +24,7 @@ int main(int argc, char** argv)
 
 
     if (dtb_offset > 0) {
-                    // a10 and a11 needed for Linux
+        // a0 and a1 needed for Linux
         write_reg(10, 0x0); // hart ID
         write_reg(11, dtb_offset + INITIAL_PC); // DTB address in memory
     }
@@ -73,6 +73,8 @@ int load_dtb_or_fs(char* file_name)
     fseek(f, 0, SEEK_SET);
     if (strstr(file_name, "dtb")) { // dtb file
         dtb_offset = MEMSIZE - len;  // do we need to store core structure in memory?
+        dtb_offset &= ~(0x1fffffLL); // 2MB addr rounding, per QEMU/riscv_em
+        printf("dtb_addr=%llx\n", dtb_offset + INITIAL_PC);
         dest = mem + dtb_offset;
     }
     else {    // fs.img
