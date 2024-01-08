@@ -412,6 +412,38 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
     }
 }
 
+static inline void umul64wide(uint64_t a, uint64_t b, uint64_t* hi, uint64_t* lo)
+{
+    uint64_t a_lo = (uint32_t)a;
+    uint64_t a_hi = a >> 32;
+    uint64_t b_lo = (uint32_t)b;
+    uint64_t b_hi = b >> 32;
+
+    uint64_t p0 = a_lo * b_lo;
+    uint64_t p1 = a_lo * b_hi;
+    uint64_t p2 = a_hi * b_lo;
+    uint64_t p3 = a_hi * b_hi;
+
+    uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
+
+    *lo = p0 + (p1 << 32) + (p2 << 32);
+    *hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
+}
+
+static inline void mul64wide(int64_t a, int64_t b, int64_t* hi, int64_t* lo)
+{
+    umul64wide((uint64_t)a, (uint64_t)b, (uint64_t*)hi, (uint64_t*)lo);
+    if (a < 0LL) *hi -= b;
+    if (b < 0LL) *hi -= a;
+}
+
+static inline void mulhsu64wide(int64_t a, uint64_t b, int64_t* hi, int64_t* lo)
+{
+    umul64wide((uint64_t)a, (uint64_t)b, (uint64_t*)hi, (uint64_t*)lo);
+    if (a < 0LL) *hi -= b;
+}
+
+
 // NOTE: shift amount only uses 6-bits
 int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
 {
@@ -463,22 +495,23 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
         // NOTE: signedness, special cases for division/remainder of certain numbers
         uint64_t n1 = read_reg(rs1);
         uint64_t n2 = read_reg(rs2);
-        uint64_t result = 0;
+        uint64_t hi=0 , lo=0, result = 0;
         switch (sub3) {
-        case MUL: result = n1 * n2; break;
+        case MUL: result = ((int64_t)n1) * ((int64_t)n2); break;
 /* copy zap8600/rv64i-emu: the idea is to trap to emulate?
         case MULH: result = (((int64_t)(int32_t)n1) * ((int64_t)(int32_t)n2)) >> 32; break;
         case MULHSU: result = (((int64_t)(int32_t)n1) * ((uint64_t)n2)) >> 32; break;
-        case MULHU:result = (((uint64_t)n1) * ((uint64_t)n2)) >> 32; break;
+        */
+        case MULHU: umul64wide(n1, n2, &result, &lo); break;     
         case DIV: if (n2 == 0) result = -1; else
-            result = ((((int32_t)n1) == INT32_MIN) && ((int32_t)n2) == -1) ? n1 : (((int32_t)n1) / (int32_t)n2); break;
-        case DIVU: result = (n2 == 0) ? 0xffffffff : (n1 / n2); break;
+            result = ((((int64_t)n1) == INT64_MIN) && ((int64_t)n2) == -1) ? n1 : (((int64_t)n1) / (int64_t)n2); break;
+        case DIVU: result = (n2 == 0) ? -1 : (n1 / n2); break;
         case REM: if (n2 == 0) result = n1; else
-            result = ((((int32_t)n1) == INT32_MIN) && (((int32_t)n2) == -1)) ? 0 : 
-                (uint32_t)((int32_t)n1 % (int32_t)n2); 
+            result = ((((int64_t)n1) == INT64_MIN) && (((int64_t)n2) == -1)) ? 0 : 
+                (uint64_t)((int64_t)n1 % (int64_t)n2); 
             break;
         case REMU: result = (n2 == 0) ? n1 : (n1 % n2); break;
-*/
+
         default: interrupt = INT_ILLEGAL_INSTR; break;  // unknown sub3
         }
         write_reg(rd, result);
@@ -529,7 +562,7 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
         uint32_t n2 = (uint32_t) read_reg(rs2);
         uint32_t result = 0;
         switch (sub3) {
-        case MUL: result = n1 * n2; break;
+        case MUL: result = ((int32_t)n1) * ((int32_t)n2); break;
         case DIV: if (n2 == 0) result = -1; else
             result = ((((int32_t)n1) == INT32_MIN) && ((int32_t)n2) == -1) ? n1 : (((int32_t)n1) / (int32_t)n2); break;
         case DIVU: result = (n2 == 0) ? 0xffffffff : (n1 / n2); break;

@@ -21,8 +21,8 @@
 #define MEM_WRITE 3
 
 
-// usable memory size: 256M
-#define MEMSIZE 256*1024*1024 
+// usable memory size: 128M
+#define MEMSIZE 128*1024*1024 
 
 extern uint64_t pc;
 extern unsigned int mode;
