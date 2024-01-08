@@ -45,5 +45,15 @@ Testing Linux under emulator
   * u-root: very simple boot system, sufficient to run together with a kernel?
   * kernel expects to be in S-mode, so SBI or equivalent unavoidable?
   * https://github.com/franzflasch/riscv_em: 32-bit MMU and 64-bit noMMU emulator, can run Linux, had patches for buildroot/linux/opensbi
+    * the shell script uses buildroot to build a file system rootfs.cpio which is specified during linux build to incorporate into the kernel image
+    * set ARCH and CROSS_COMPILER before running "make menuconfig" for the kernel, we're getting closer
+    * but still version difference and lots of config differences to sort out
+    * need to try separate buildroot build as well
+    * the 32-bit version uses openSBI
+    * buildroot: about 500 lines of real config options
+    * emulator addresses: reset vector at 0x1000, dtb at end of physical memory with alingment, kernel itself at start of physical memory
+      * the kernel start address and dtb addresses are passed as part of the reset vector
+    * it seems that I should be able to make some minor modifications to my emulator and be able to run with these two files
+
 
     
