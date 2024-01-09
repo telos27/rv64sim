@@ -54,6 +54,11 @@ Testing Linux under emulator
     * emulator addresses: reset vector at 0x1000, dtb at end of physical memory with alingment, kernel itself at start of physical memory
       * the kernel start address and dtb addresses are passed as part of the reset vector
     * it seems that I should be able to make some minor modifications to my emulator and be able to run with these two files
+4. Test
+  * reset vector not necessary, load dtb aligned at 2MB
+  * it uses M instructions, added some of them back
+  * uses simple UART at 0x300000, temporarily changed address, should be able to use dtb to adjust
+  * it prints a few messages and tries to access memory beyond the 128M end (0x8000000) when building zone list?
 
 
     
