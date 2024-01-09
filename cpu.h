@@ -1,5 +1,24 @@
 #pragma once
+
+// config options
+// CONFIG_RV64, CONFIG_M, CONFIG_A, CONFIG_C
+
 #include <stdint.h>
+
+#ifdef CONFIG_RV64
+#define XLEN 64
+typedef uint64_t reg_type;			// unsigned register-sized integer
+typedef int64_t signed_reg_type;	// signed register-sized integer
+#define SHIFT_MASK 0x3f
+#define SHIFT_REST_MASK 0x7e	// sub7 with one bit consumed by shift amount
+#else
+#define XLEN 32
+typedef uint32_t reg_type;
+typedef int32_t signed_reg_type;
+#define SHIFT_MASK 0x1f
+#define SHIFT_REST_MASK 0x7f
+#endif
+
 
 // privilege levles
 #define MODE_M 0x3
@@ -24,16 +43,16 @@
 // usable memory size: 128M
 #define MEMSIZE 128*1024*1024 
 
-extern uint64_t pc;
+extern reg_type pc;
 extern unsigned int mode;
-extern uint64_t no_cycles;
+extern reg_type no_cycles;
 extern uint8_t mem[];   // main memory
 
-extern int init_cpu(uint64_t start_pc);
-extern int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data , uint64_t* interrupt);
-extern uint64_t read_reg(int reg_no);
-extern int write_reg(int reg_no, uint64_t data);
-extern uint64_t read_CSR(int CSR_no);
-extern uint64_t write_CSR(int CSR_no, uint64_t value);
+extern int init_cpu(reg_type start_pc);
+extern int pa_mem_interface(int mem_mode, reg_type addr, int size, reg_type* data , reg_type* interrupt);
+extern reg_type read_reg(int reg_no);
+extern int write_reg(int reg_no, reg_type data);
+extern reg_type read_CSR(int CSR_no);
+extern reg_type write_CSR(int CSR_no, reg_type value);
 extern int execute_code();
 

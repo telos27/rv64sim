@@ -116,6 +116,7 @@
 #define AMO_W 0x2
 
 
+#ifdef CONFIG_RV64
 // Sv39 virtual memory
 #define PTE_LEVELS 3
 #define VPN_SEG1 0x7fc0000	// bits [26:18] of vpn
@@ -130,12 +131,25 @@
 #define PTE_A 0x40
 #define PTE_D 0x80
 #define PTE_PPN 0x3ffffffffffc00
+#else   // Sv32
+#define PTE_LEVELS 2
+#define VPN_SEG1 0xffc00	// bits [19:10] of vpn
+#define VPN_SEG2 0x3ff	// bits[9:0]
+#define PTE_V 0x1
+#define PTE_R 0x2
+#define PTE_W 0x4
+#define PTE_X 0x8
+#define PTE_U 0x10
+#define PTE_G 0x20
+#define PTE_A 0x40
+#define PTE_D 0x80
+#define PTE_PPN 0xffffc000
+#endif
 
 
 #define BOOL int8_t
 #define TRUE 1
 #define FALSE 0 
-#define REGISTER uint64_t   // enough to hold the content of a single register
 
 // external memory
 uint8_t mem[MEMSIZE];   // main memory
@@ -148,27 +162,27 @@ uint8_t mem[MEMSIZE];   // main memory
 #define NO_CSRS 4096
 
 // CPU internal state
-static REGISTER regs[32];
-static uint64_t CSRs[NO_CSRS];  // explicit init?
-uint64_t pc ;       // 64-bit PC
+static reg_type regs[32];
+static reg_type CSRs[NO_CSRS];  // explicit init?
+reg_type pc ;       // 64-bit PC
 unsigned int mode;      // privilege mode: currently M only
-static uint64_t reservation;   // address for lr/sc ; top 61 bits
+static reg_type reservation;   // address for lr/sc ; top 61 bits
 unsigned int wfi = 0;    // WFI flag 
-uint64_t no_cycles; // execution cycles; currently always 1 cycle/instruction
-static uint64_t interrupt;  // interrupt type
+reg_type no_cycles; // execution cycles; currently always 1 cycle/instruction
+static reg_type interrupt;  // interrupt type
 
 static unsigned int trace = 0;  // trace every instruction
 
 
 // read register
 // can optimize by always 0 in x0
-REGISTER read_reg(int reg_no)
+reg_type read_reg(int reg_no)
 {
     assert(reg_no < 32);
     return (reg_no == 0) ? 0 : regs[reg_no];
 }
 
-int write_reg(int reg_no, REGISTER data)
+int write_reg(int reg_no, reg_type data)
 {
     assert(reg_no < 32);
    if (reg_no != 0) {
@@ -179,7 +193,7 @@ int write_reg(int reg_no, REGISTER data)
 
 
 // TODO: implement CSR R/W rules according to spec
-uint64_t read_CSR(int CSR_no)
+reg_type read_CSR(int CSR_no)
 {
     assert(CSR_no < 4096);
     if (CSR_no == CSR_MISA)
@@ -194,7 +208,7 @@ uint64_t read_CSR(int CSR_no)
     return CSRs[CSR_no];
 }
 
-uint64_t write_CSR(int CSR_no, uint64_t value)
+reg_type write_CSR(int CSR_no, reg_type value)
 {
     assert(CSR_no < 4096);
     CSRs[CSR_no] = value;
@@ -216,12 +230,12 @@ uint64_t write_CSR(int CSR_no, uint64_t value)
 
 // VM handling
 
-typedef uint64_t PTE;
-
+typedef reg_type PTE;
+// TODO: cover Sv32 as well
 // translate 27-bit vpn va to 44-bit ppn
 // mem_access_mode: instruction read, data read, data write
 // returns 0 if there is any kind of fault, which is stored in interrupt
-uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
+uint64_t vpn2ppn(uint64_t vpn, int mem_access_mode, reg_type* interrupt)
 {
     uint64_t ppn = read_CSR(CSR_SATP) & CSR_SATP_PPN;
     uint64_t vpn_segment[] = { vpn & VPN_SEG1 , vpn & VPN_SEG2 , vpn & VPN_SEG3};	// three segements corresponding to three-level page table
@@ -280,7 +294,7 @@ uint64_t vpn2ppn(uint64_t vpn, uint64_t mem_access_mode, uint64_t* interrupt)
 // physical address memory operation, no sign extension done here
 // memory address start at INITIAL_PC, no memory storage below that address
 // can improve perf by handling multiple bytes at once
-int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data, uint64_t *interrupt)
+int pa_mem_interface(int mem_mode, reg_type addr, int size, reg_type* data, reg_type *interrupt)
 {
     assert(addr >= INITIAL_PC);
     // TODO: PMP & PMA checks 
@@ -350,12 +364,13 @@ int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data,
 // NOTE: little-endian
 // TODO: mstatus.mprv
 // TODO: cleaner logic for mem I/O vs real memory
-int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
+int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
 {
     // address translation here ;
-    uint64_t satp = read_CSR(CSR_SATP);
+    reg_type satp = read_CSR(CSR_SATP);
 
     // TODO: trap for other modes
+    // TODO: 32-bit
     if (mode!=MODE_M && ((satp>>60) == CSR_SATP_MODE_SV39)) {
         addr = (vpn2ppn(addr>>12 , mem_mode , &interrupt) << 12) | (addr & 0xfff);  // 56 bit pa
         if (interrupt!=0xffffffffffffffff) return -1;
@@ -412,6 +427,7 @@ int rw_memory(uint64_t mem_mode, uint64_t addr, int sub3, uint64_t* data)
     }
 }
 
+#ifdef CONFIG_RV64
 static inline void umul64wide(uint64_t a, uint64_t b, uint64_t* hi, uint64_t* lo)
 {
     uint64_t a_lo = (uint32_t)a;
@@ -443,11 +459,12 @@ static inline void mulhsu64wide(int64_t a, uint64_t b, int64_t* hi, int64_t* lo)
     if (a < 0LL) *hi -= b;
 }
 
+#endif
 
 // NOTE: shift amount only uses 6-bits
 int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
 {
-    if ((sub7 & 1) != 1) {
+    if ((sub7 & 1) != 1) {  //non-MULDIV
         switch (sub3) {
         case ALU_ADD:
             if (sub7 == NORMAL) {
@@ -470,21 +487,21 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
             write_reg(rd, read_reg(rs1) & read_reg(rs2));
             break;
         case ALU_SLL:
-            write_reg(rd, read_reg(rs1) << (read_reg(rs2) & 0x3f));
+            write_reg(rd, read_reg(rs1) << (read_reg(rs2) & SHIFT_MASK));
             break;
         case ALU_SRL:
-            if ((sub7&0xfe) == NORMAL) {    // only check 6 bits
+            if ((sub7&SHIFT_REST_MASK) == NORMAL) {    // number of bits vary
                 write_reg(rd, read_reg(rs1) >> (read_reg(rs2) & 0x3f));
-            } else if ((sub7&0xfe) == SRA) {    // check 6 bits
+            } else if ((sub7&SHIFT_REST_MASK) == SRA) {    
                 // signed right shift
-                write_reg(rd, ((int64_t)read_reg(rs1)) >> (read_reg(rs2) & 0x3f));
+                write_reg(rd, ((signed_reg_type)read_reg(rs1)) >> (read_reg(rs2) & SHIFT_MASK));
             }
             else {
                 interrupt = INT_ILLEGAL_INSTR;  // nonexistent sub7
             }
             break;
         case ALU_SLT:
-            write_reg(rd, ((int64_t)read_reg(rs1) < (int64_t)read_reg(rs2)) ? 1 : 0);
+            write_reg(rd, ((reg_type)read_reg(rs1) < (reg_type)read_reg(rs2)) ? 1 : 0);
             break;
         case ALU_SLTU:
             write_reg(rd, (read_reg(rs1) < read_reg(rs2)) ? 1 : 0);
@@ -519,7 +536,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
     return TRUE;
 }
 
-
+#ifdef CONFIG_RV64
 
 // NOTE: shift amount only uses 5-bits
 // operation on 32 bits only
@@ -578,30 +595,31 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
     return TRUE;
 }
 
+#endif
 
 // NOTE: imm is already sign-extended; shift amount only uses 5 bits
-int imm_op(int rd , int rs1 , int sub3 , int sub7 , uint64_t imm)
+int imm_op(int rd , int rs1 , int sub3 , int sub7 , reg_type imm)
 {
     switch (sub3) {
-    case ALU_ADD: write_reg(rd, ((int64_t)read_reg(rs1)) + ((int32_t) imm)); break;
+    case ALU_ADD: write_reg(rd, ((signed_reg_type)read_reg(rs1)) + ((int32_t) imm)); break;
     case ALU_XOR: write_reg(rd, read_reg(rs1) ^ imm); break;
     case ALU_OR: write_reg(rd, read_reg(rs1) | imm); break;
     case ALU_AND: write_reg(rd, read_reg(rs1) & imm); break;
     case ALU_SLL: write_reg(rd, read_reg(rs1) << (imm & 0x3f)); break;
     case ALU_SRL:
-        if ((sub7 & 0xfe) == NORMAL) {  // check 6 bits
-            write_reg(rd, read_reg(rs1) >> (imm & 0x3f));
+        if ((sub7 & SHIFT_REST_MASK) == NORMAL) {  // variable number of bits
+            write_reg(rd, read_reg(rs1) >> (imm & SHIFT_MASK));
         }
-        else if ((sub7&0xfe) == SRA) {  // check 6 bits
+        else if ((sub7&SHIFT_REST_MASK) == SRA) {  // check 6 bits
             // signed right shift
-            write_reg(rd, ((int64_t)read_reg(rs1)) >> (imm & 0x3f));
+            write_reg(rd, ((reg_type)read_reg(rs1)) >> (imm & SHIFT_MASK));
         }
         else {
             interrupt = INT_ILLEGAL_INSTR; // nonexistent sub7
         }
         break;
     case ALU_SLT:
-        write_reg(rd, ((int64_t)read_reg(rs1) < (int64_t)imm) ? 1 : 0);
+        write_reg(rd, ((signed_reg_type)read_reg(rs1) < (signed_reg_type)imm) ? 1 : 0);
         break;
     case ALU_SLTU:
         write_reg(rd, (read_reg(rs1) < imm) ? 1 : 0);
@@ -611,7 +629,7 @@ int imm_op(int rd , int rs1 , int sub3 , int sub7 , uint64_t imm)
     return TRUE;
 }
 
-
+#ifdef CONFIG_RV64
 // NOTE: imm is already sign-extended; shift amount only uses 5 bits
 // only uses 32 bits from rs1, imm is 32-bit
 int imm32_op(int rd, int rs1, int sub3, int sub7, unsigned int imm)
@@ -635,26 +653,26 @@ int imm32_op(int rd, int rs1, int sub3, int sub7, unsigned int imm)
     }
     return TRUE;
 }
-
+#endif
 
 // return a sign-extended version of a number with no_bits
-uint64_t sign_extend(uint64_t n , int no_bits)
+signed_reg_type sign_extend(signed_reg_type n , int no_bits)
 {
     // TODO: is this portable?
-    return (((int64_t)n) << (64 - no_bits)) >> (64 - no_bits);
+    return (((signed_reg_type)n) << (XLEN - no_bits)) >> (XLEN - no_bits);
 }
 
 
 // return next PC, -1 if we don't branch
-int64_t branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned int imm7)
+reg_type branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned int imm7)
 {
     BOOL do_branch = FALSE ;
 
     switch (sub3) {
     case BRANCH_EQ: do_branch = read_reg(rs1) == read_reg(rs2); break ;
     case BRANCH_NE: do_branch = read_reg(rs1) != read_reg(rs2); break;
-    case BRANCH_LT: do_branch = (int64_t)read_reg(rs1) < (int64_t) read_reg(rs2); break ;
-    case BRANCH_GE: do_branch = (int64_t)read_reg(rs1) >= (int64_t) read_reg(rs2); break;
+    case BRANCH_LT: do_branch = (signed_reg_type)read_reg(rs1) < (signed_reg_type) read_reg(rs2); break ;
+    case BRANCH_GE: do_branch = (signed_reg_type)read_reg(rs1) >= (signed_reg_type) read_reg(rs2); break;
     case BRANCH_LTU: do_branch = read_reg(rs1) < read_reg(rs2); break;
     case BRANCH_GEU: do_branch = read_reg(rs1) >= read_reg(rs2); break;
     default: interrupt = INT_ILLEGAL_INSTR; // error
@@ -664,22 +682,22 @@ int64_t branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned in
         // NOTE: order of bits, added a zero bit at the end; signed offset
         unsigned int unsigned_offset = ((imm7 & 0x40) << 6) | ((imm5 & 0x1) << 11) |
             ((imm7 & 0x3f) << 5) | (imm5 & 0x1e) ;  
-        uint64_t offset = sign_extend(unsigned_offset , 13);
-        uint64_t ret =  pc+offset ;
+        reg_type offset = sign_extend(unsigned_offset , 13);
+        reg_type ret =  pc+offset ;
     //    printf("B: pc=%x , sub3=%x , rs1=%x , rs2=%x , imm5=%x , imm7=%x , offset=%x , ret=%x\n", pc , sub3, rs1, rs2, imm5,
      //       imm7, offset, ret);
         return ret;
     } else {
-        return -1 ;
+        return (reg_type) - 1;
     }
 }
 
 // JAL opcode: returns next PC
-uint64_t jal_op(int rd, unsigned int imm)
+reg_type jal_op(int rd, unsigned int imm)
 {
     write_reg(rd, pc + 4);
     // NOTE: bit position, add 0 bit , sign extend
-    uint64_t ret = pc + sign_extend(((imm & 0x80000) | ((imm & 0xff) << 11) | 
+    reg_type ret = pc + sign_extend(((imm & 0x80000) | ((imm & 0xff) << 11) | 
         ((imm & 0x100) << 2) | ((imm & 0x7fe00) >> 9))<<1, 21);
    // printf("JAL: pc=%x , rd=%x , imm=%x , next=%x\n", pc , rd, imm, ret);
     return ret;
@@ -687,12 +705,12 @@ uint64_t jal_op(int rd, unsigned int imm)
 
 
 // JALR opcode: returns next PC
-uint64_t jalr_op(int rd, int rs1, unsigned int imm12)
+reg_type jalr_op(int rd, int rs1, unsigned int imm12)
 {
     // NOTE: write register afterwards, rd could be same as rs1
-    uint64_t saved_pc = pc + 4;
+    reg_type saved_pc = pc + 4;
     // NOTE: sign extend , zero LSB
-    uint64_t ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & 0xfffffffffffffffe;
+    reg_type ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & (~1);
     //printf("JALR: pc=%x , rd=%x , rs1=%x , imm12=%x , next=%x\n", pc , rd, rs1, imm12 ,  ret);
     write_reg(rd, saved_pc);
     return ret;
@@ -702,6 +720,7 @@ uint64_t jalr_op(int rd, int rs1, unsigned int imm12)
 // NOTE: sign extend to 32 bits
 int auipc_op(int rd, unsigned int imm20)
 {
+    // TODO: 32bit
     write_reg(rd, pc + sign_extend(imm20 << 12 , 32));
     return 0;
 }
@@ -710,6 +729,7 @@ int auipc_op(int rd, unsigned int imm20)
 // NOTE: sign extend to 32 bits
 int lui_op(int rd, unsigned int imm20)
 {
+    // TODO: 32bit
     write_reg(rd, sign_extend(imm20 << 12 , 32));
     return 0;
 }
@@ -717,7 +737,7 @@ int lui_op(int rd, unsigned int imm20)
 
 // CSR, ecall/ebreak, mret/sret, wfi
 // return next_pc ;
-uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t imm12)
+reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type imm12)
 {
     switch (sub3) {
     case SYSTEM_ECALL: {    // ecall , ebreak , mret, sret
@@ -732,7 +752,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             break;
         }
         case ECALL_MRET: {
-            uint64_t mstatus = read_CSR(CSR_MSTATUS);
+            reg_type mstatus = read_CSR(CSR_MSTATUS);
             int prev_mode = mode;  // we are swapping mode and mstatus.mpp here
             mode = (mstatus & CSR_MSTATUS_MPP) >> 11;  // restore CPU mode from MPP ;
             // mie = mpie ; mpie=1 ; mpp = mode
@@ -742,7 +762,7 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
             return next_pc;
         }
         case ECALL_SRET: {
-            uint64_t sstatus = read_CSR(CSR_SSTATUS);
+            reg_type sstatus = read_CSR(CSR_SSTATUS);
             int prev_mode = mode;  // we are swapping mode and mstatus.mpp here
             mode = (sstatus & CSR_SSTATUS_SPP) >> 8;  // restore CPU mode from SPP (NOTE: one bit only) ;
             // mie = mpie ; mpie=1 ; spp = mode[0]
@@ -764,20 +784,18 @@ uint64_t ecall_op(int sub3 , int sub7 , uint64_t rs1 , uint64_t rd , uint64_t im
     // NOTE: order of register read/write as rd&rs1 can be the same register; special cases when register number is 0
     // atomic read CSR into rd and write CSR from rs1
     case SYSTEM_CSRRW: {
-        uint64_t new_value = read_reg((int)rs1);
+        reg_type new_value = read_reg((int)rs1);
         // if x0, do not read CSR, but still write CSR
         if (rd != 0) {
             write_reg((int)rd, read_CSR((int)imm12));
         }
-        uint64_t time;
-        io_read(IO_CLINT_TIMERL, &time);
-        //printf("%ld:CSRRW@0x%lx ,  [0x%x]=0x%x , prev=0x%x\n", time , pc , imm12, new_value , regs[rd]);
+        //printf("CSRRW@0x%lx ,  [0x%x]=0x%x , prev=0x%x\n", pc , imm12, new_value , regs[rd]);
         write_CSR((int)imm12, new_value);
         break;
     }
     case SYSTEM_CSRRS: {
-        uint64_t new_value = read_reg((int)rs1);
-        uint64_t value = read_CSR((int)imm12);
+        reg_type new_value = read_reg((int)rs1);
+        reg_type value = read_CSR((int)imm12);
         write_reg((int)rd, value);
         if (rs1 != 0) {
             write_CSR((int)imm12, value | new_value);    // TODO: unsettable bits?
@@ -938,8 +956,8 @@ void atomic32_op(int sub7, int rd, int rs1, int rs2)
 uint64_t execute_one_instruction()
 {
     uint32_t instr , opcode, sub3, sub7, rs1, rs2, rd, imm12, imm5, imm7, imm20;
-    int64_t next_pc = -1;
-    uint64_t mem_data;
+    reg_type next_pc = -1;
+    reg_type mem_data;
 
  //   if (pc == 0x800017c4) DebugBreak();
 
@@ -966,9 +984,11 @@ uint64_t execute_one_instruction()
 
     switch (opcode) {
     case OP_ADD: reg_op(rd, rs1, rs2, sub3, sub7); break;
+#ifdef CONFIG_RV64
     case OP_ADDW: reg32_op(rd, rs1, rs2, sub3, sub7); break;
-    case OP_ADDI: imm_op(rd, rs1, sub3, sub7, sign_extend(imm12, 12)); break;
     case OP_ADDIW: imm32_op(rd, rs1, sub3, sub7, (uint32_t)sign_extend(imm12, 12)); break;
+#endif
+    case OP_ADDI: imm_op(rd, rs1, sub3, sub7, sign_extend(imm12, 12)); break;
         // NOTE: memory address offset is signed
     case OP_LB:
         rw_memory(MEM_READ, read_reg(rs1) + sign_extend(imm12, 12), sub3, &mem_data);
@@ -986,7 +1006,7 @@ uint64_t execute_one_instruction()
     case OP_ECALL: next_pc = ecall_op(sub3, sub7, rs1, rd, imm12); break;
     case OP_FENCEI: break; // TODO: don't need to anything until we have cache or pipeline
     case OP_A: 
-        if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); 
+        if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); // TODO: 32bit
         else atomic32_op(sub7, rd, rs1, rs2); break;  // fault for other sub3
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
@@ -998,7 +1018,7 @@ uint64_t execute_one_instruction()
 // check to see if what kind of interrupt we should generate
 void check_interrupt()
 {
-    uint64_t mip, mie, mstatus;
+    reg_type mip, mie, mstatus;
 
     mstatus = read_CSR(CSR_MSTATUS);
     mip = read_CSR(CSR_MIP);
@@ -1011,9 +1031,9 @@ void check_interrupt()
     }
 
     // SSI
-    uint64_t sstatus = read_CSR(CSR_SSTATUS);
-    uint64_t sip = read_CSR(CSR_SIP);
-    uint64_t sie = read_CSR(CSR_SIE);
+    reg_type sstatus = read_CSR(CSR_SSTATUS);
+    reg_type sip = read_CSR(CSR_SIP);
+    reg_type sie = read_CSR(CSR_SIE);
 
     // generate interrupt only if all three conditions are met:
     // SIP.SSIP , SIE.SSIE , SSTATUS.SIE
@@ -1034,7 +1054,7 @@ void check_interrupt()
 
 // return next_pc; -1 if we don't take the interrupt for some reason (currently not possible)
 // possible interrupts: timer + exceptions
-uint64_t execute_interrupt(uint64_t interrupt)
+reg_type execute_interrupt(reg_type interrupt)
 {
     uint64_t result = -1;
 
@@ -1083,7 +1103,7 @@ uint64_t execute_interrupt(uint64_t interrupt)
 
 int execute_code()
 { 
-    uint64_t next_pc;
+    reg_type next_pc;
 
     for (;;) {
         next_pc = pc ;  // assume no jump
@@ -1096,9 +1116,8 @@ int execute_code()
         } 
 
         check_interrupt();
-
-        // 4 combination of interrupt & wfi  
-        if (interrupt==INTR_NONE) {   // if no interrupt; if there is interrupt, will execute the interrupt-handling code following this if
+  
+        if (interrupt==INTR_NONE) { 
             if (!wfi) next_pc = execute_one_instruction();    // does not change any state except for what is defined in the instruction
         }
         if (interrupt!=INTR_NONE) {
