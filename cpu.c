@@ -299,9 +299,9 @@ int pa_mem_interface(uint64_t mem_mode, uint64_t addr, int size, uint64_t* data,
             break;
         case MEM_WORD:
             mem[addr] = (*data) & 0xff;
-            mem[addr + 1] = ((*data) & 0xff00) >> 8;
-            mem[addr + 2] = ((*data) & 0xff0000) >> 16;
-            mem[addr + 3] = ((*data) & 0xff000000) >> 24;
+            mem[addr + 1] = (uint8_t)(((*data) & 0xff00) >> 8);
+            mem[addr + 2] = (uint8_t)(((*data) & 0xff0000) >> 16);
+            mem[addr + 3] = (uint8_t)(((*data) & 0xff000000) >> 24);
             break;
         case MEM_DWORD:
             mem[addr] = (*data) & 0xff;
@@ -583,7 +583,7 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
 int imm_op(int rd , int rs1 , int sub3 , int sub7 , uint64_t imm)
 {
     switch (sub3) {
-    case ALU_ADD: write_reg(rd, read_reg(rs1) + (int32_t) imm); break;
+    case ALU_ADD: write_reg(rd, ((int64_t)read_reg(rs1)) + ((int32_t) imm)); break;
     case ALU_XOR: write_reg(rd, read_reg(rs1) ^ imm); break;
     case ALU_OR: write_reg(rd, read_reg(rs1) | imm); break;
     case ALU_AND: write_reg(rd, read_reg(rs1) & imm); break;
