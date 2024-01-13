@@ -36,4 +36,8 @@
   <ItemGroup>
     <Text Include="rv64.txt" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="fs.img" />
+    <None Include="image.xv6" />
+  </ItemGroup>
 </Project>

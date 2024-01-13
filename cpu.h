@@ -11,12 +11,18 @@ typedef uint64_t reg_type;			// unsigned register-sized integer
 typedef int64_t signed_reg_type;	// signed register-sized integer
 #define SHIFT_MASK 0x3f
 #define SHIFT_REST_MASK 0x7e	// sub7 with one bit consumed by shift amount
+#define INTR_NONE 0xffffffffffffffff
+#define CSR_SATP_MODE (0xf<<60)
+#define CSR_SATP_PPN 0xfffffffffff	// bits 43:0
 #else
 #define XLEN 32
 typedef uint32_t reg_type;
 typedef int32_t signed_reg_type;
 #define SHIFT_MASK 0x1f
 #define SHIFT_REST_MASK 0x7f
+#define INTR_NONE 0xffffffff
+#define CSR_SATP_MODE 0x80000000
+#define CSR_SATP_PPN 0x3fffff
 #endif
 
 

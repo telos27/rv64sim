@@ -34,7 +34,6 @@
 
 #define CSR_CYCLE 0xc00
 
-
 // bit masks for fields in CSRs
 #define CSR_MSTATUS_MIE 0x8
 #define CSR_MSTATUS_MPIE 0x80
@@ -50,17 +49,18 @@
 #define CSR_SIP_SEIP 0x200
 #define CSR_SIE_SSIE 0x2
 #define CSR_SIE_SEIE 0x200
-#define CSR_SATP_MODE (0xf<<60)
-#define CSR_SATP_PPN 0xfffffffffff	// bits 43:0
-	
+#ifdef CONFIG_RV64
 #define CSR_SATP_MODE_SV39 0x8
+#else
+#define CSR_SATP_MODE_SV32 0x1
+#endif
 
 // interrupt numbers
-#define INTR_NONE 0xffffffffffffffff
-#define INTR_SSOFTWARE ((1LL<<63)|1)
-#define INTR_SEXTERNAL ((1LL<<63)|9)
-#define INTR_MTIMER ((1LL<<63) | 7)
-#define INTR_MEXTERNAL ((1LL<<63) | 0xb)
+// TODO: separate out 1<<(xlen-1)
+#define INTR_SSOFTWARE ((1LL<<(XLEN-1))|1)
+#define INTR_SEXTERNAL ((1LL<<(XLEN-1))|9)
+#define INTR_MTIMER ((1LL<<(XLEN-1)) | 7)
+#define INTR_MEXTERNAL ((1LL<<(XLEN-1)) | 0xb)
 #define INTR_INSTR_MISALIGN 0x0
 #define INT_INSTR_ACCESS 0x1
 #define INT_ILLEGAL_INSTR 0x2

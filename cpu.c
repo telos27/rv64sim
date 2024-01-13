@@ -119,9 +119,7 @@
 #ifdef CONFIG_RV64
 // Sv39 virtual memory
 #define PTE_LEVELS 3
-#define VPN_SEG1 0x7fc0000	// bits [26:18] of vpn
-#define VPN_SEG2 0x3fe00	// bits[17:9]
-#define VPN_SEG3 0x1ff // bits[8:0]
+int vpn_seg[3] = { 0x7fc0000, 0x3fe00, 0x1ff };	// bits [26:18] of vpn, bits[17:9], bits[8:0]
 #define PTE_V 0x1
 #define PTE_R 0x2
 #define PTE_W 0x4
@@ -133,8 +131,7 @@
 #define PTE_PPN 0x3ffffffffffc00
 #else   // Sv32
 #define PTE_LEVELS 2
-#define VPN_SEG1 0xffc00	// bits [19:10] of vpn
-#define VPN_SEG2 0x3ff	// bits[9:0]
+int vpn_seg[3] = { 0xffc00, 0x3ff,0 };  // bits [19:10] of vpn, bits[9:0], not used
 #define PTE_V 0x1
 #define PTE_R 0x2
 #define PTE_W 0x4
@@ -231,22 +228,30 @@ reg_type write_CSR(int CSR_no, reg_type value)
 // VM handling
 
 typedef reg_type PTE;
+
 // TODO: cover Sv32 as well
 // translate 27-bit vpn va to 44-bit ppn
 // mem_access_mode: instruction read, data read, data write
 // returns 0 if there is any kind of fault, which is stored in interrupt
-uint64_t vpn2ppn(uint64_t vpn, int mem_access_mode, reg_type* interrupt)
+reg_type vpn2ppn(uint64_t vpn, int mem_access_mode, reg_type* interrupt)
 {
-    uint64_t ppn = read_CSR(CSR_SATP) & CSR_SATP_PPN;
-    uint64_t vpn_segment[] = { vpn & VPN_SEG1 , vpn & VPN_SEG2 , vpn & VPN_SEG3};	// three segements corresponding to three-level page table
+    reg_type ppn = read_CSR(CSR_SATP) & CSR_SATP_PPN;       
+    // 3 segments for Sv39, 2 segments for Sv32, the third one is not used
+    reg_type vpn_segment[3] = {vpn & vpn_seg[0] , vpn&vpn_seg[1] , vpn&vpn_seg[2]};	// three segements corresponding to three-level page table
 
-    // loop three levels for Sv39
+    // loop two levels for Sv32, three levels for Sv39
     for (int i = 0; i < PTE_LEVELS; i++)
     {
         PTE pte;
 
-        pa_mem_interface(MEM_READ, (ppn << 12) | ((vpn_segment[i]>>(9*(PTE_LEVELS-i-1)))<<3), MEM_DWORD, &pte, interrupt);	// physical address, no translation
-        if (*interrupt != 0xffffffffffffffff) return 0;
+        pa_mem_interface(MEM_READ, (ppn << 12) | ((vpn_segment[i]>>(9*(PTE_LEVELS-i-1)))<<3),
+#ifdef CONFIG_RV64
+            MEM_DWORD
+#else
+            MEM_WORD
+#endif
+            , &pte, interrupt);	// physical address, no translation
+        if (*interrupt != INTR_NONE) return 0;
 
         if ((pte & PTE_V) == 0 || ((pte & PTE_W) && !(pte & PTE_R))) {
             *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;	// invalid PTE or RW reserved combination
@@ -254,14 +259,15 @@ uint64_t vpn2ppn(uint64_t vpn, int mem_access_mode, reg_type* interrupt)
         }
 
         if (pte & PTE_R || pte & PTE_X) { // leaf pte
-            uint64_t result = (pte & PTE_PPN)>>10 ;
+            reg_type result = (pte & PTE_PPN)>>10 ;
             // TODO: check U & SUM & MXR
 
             // check superpage alignment: the last segments of the PPN should all be 0
-            if (((i == 0) && (((result & VPN_SEG2) != 0) || ((result & VPN_SEG3) != 0))) || 
-                ((i==1) && ((result & VPN_SEG3) !=0))) {
-                *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
-                return 0;
+            for (int j = i + 1; j < PTE_LEVELS; j++) {
+                if (result & vpn_seg[j]!=0) {
+                    *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
+                    return 0;
+                }
             }
 
             /* TODO: no need to check?  xv6 doesn't use them, how about Linux?
@@ -273,12 +279,16 @@ uint64_t vpn2ppn(uint64_t vpn, int mem_access_mode, reg_type* interrupt)
             }
             */
             // TODO: handle A&D update; set A, set D if write; should not update for xv6?
-            if (i == 0) {	// gigapage: use segment1 from VPN
+
+            // handle large pages
+            if (i == 0) {	// Sv32/megpage or Sv39/gigapage: use segment1 from VPN
                 result |= vpn_segment[1];
             }
-            if (i<=1) {     // megapage and gigapage: use segmenet2 from VPN
+#ifdef CONFIG_RV64
+            if (i<=1) {     // Sv39: megapage and gigapage: use segmenet2 from VPN
                 result |= vpn_segment[2];
             }
+#endif
             return result;
         }
         else {
@@ -300,8 +310,12 @@ int pa_mem_interface(int mem_mode, reg_type addr, int size, reg_type* data, reg_
     // TODO: PMP & PMA checks 
     addr -= INITIAL_PC;
     assert(addr < MEMSIZE);
-    assert(size == MEM_BYTE || size == MEM_HALFWORD || size == MEM_WORD || size==MEM_DWORD ||
-            size==MEM_UBYTE || size==MEM_UHALFWORD || size==MEM_UWORD);
+    int size_check = size == MEM_BYTE || size == MEM_HALFWORD || size == MEM_WORD || 
+#ifdef CONFIG_RV64
+         size==MEM_DWORD ||
+#endif
+            size==MEM_UBYTE || size==MEM_UHALFWORD || size==MEM_UWORD ;
+    assert(size_check);
     if (mem_mode == MEM_WRITE) {
         switch (size) {
         case MEM_BYTE:
@@ -317,6 +331,7 @@ int pa_mem_interface(int mem_mode, reg_type addr, int size, reg_type* data, reg_
             mem[addr + 2] = (uint8_t)(((*data) & 0xff0000) >> 16);
             mem[addr + 3] = (uint8_t)(((*data) & 0xff000000) >> 24);
             break;
+#ifdef CONFIG_RV64
         case MEM_DWORD:
             mem[addr] = (*data) & 0xff;
             mem[addr + 1] = ((*data) & 0xff00) >> 8;
@@ -327,6 +342,7 @@ int pa_mem_interface(int mem_mode, reg_type addr, int size, reg_type* data, reg_
             mem[addr + 6] = ((*data) & 0xff000000000000) >> 48;
             mem[addr + 7] = ((*data) & 0xff00000000000000) >> 56;
             break;
+#endif
         default: *interrupt=INT_ILLEGAL_INSTR ; // unspported size
         }
 
@@ -344,13 +360,14 @@ int pa_mem_interface(int mem_mode, reg_type addr, int size, reg_type* data, reg_
             *data = mem[addr] | ((uint64_t)mem[addr + 1]) << 8 |
                 ((uint64_t)mem[addr + 2]) << 16 | ((uint64_t)mem[addr + 3]) << 24;
             break;
+#ifdef CONFIG_RV64
         case MEM_DWORD:
             *data = mem[addr] | ((uint64_t)mem[addr + 1]) << 8 |
                 ((uint64_t)mem[addr + 2]) << 16 | ((uint64_t)mem[addr + 3]) << 24 |
             ((uint64_t)mem[addr + 4]) << 32 | ((uint64_t)mem[addr + 5]) << 40 |
             ((uint64_t)mem[addr + 6]) << 48 | ((uint64_t)mem[addr + 7]) << 56;
             break;
-
+#endif
         default:
             *interrupt = INT_ILLEGAL_INSTR ; // unsupported size
         }
@@ -370,10 +387,15 @@ int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
     reg_type satp = read_CSR(CSR_SATP);
 
     // TODO: trap for other modes
-    // TODO: 32-bit
-    if (mode!=MODE_M && ((satp>>60) == CSR_SATP_MODE_SV39)) {
-        addr = (vpn2ppn(addr>>12 , mem_mode , &interrupt) << 12) | (addr & 0xfff);  // 56 bit pa
-        if (interrupt!=0xffffffffffffffff) return -1;
+    // TODO: use macros
+#ifdef CONFIG_RV64
+    int do_vm = (satp >> 60) == CSR_SATP_MODE_SV39;
+#else
+    int do_vm = sat >> 31;  // one-bit
+#endif
+    if (mode!=MODE_M && do_vm) {
+        addr = (vpn2ppn(addr>>12 , mem_mode , &interrupt) << 12) | (addr & 0xfff);  // truncate 34 to 32 bits for Sv32
+        if (interrupt!=INTR_NONE) return -1;
     }
     if (mem_mode==MEM_WRITE) {
         if (addr >= MEMIO_START && addr < MEMIO_END ||
@@ -398,25 +420,27 @@ int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
         }
         else {
             result = pa_mem_interface(mem_mode, addr, sub3, &read_data , &interrupt);
-            if (interrupt != 0xffffffffffffffff) return -1;
+            if (interrupt != INTR_NONE) return -1;
         }
         switch (sub3) {
             case MEM_BYTE: 
                 // NOTE: sign extension
-                *data = (int64_t)((int8_t)read_data) ; 
+                *data = (signed_reg_type)((int8_t)read_data) ; 
                 break ;
             case MEM_HALFWORD: 
                 // NOTE: sign extension
-                *data = (int64_t) ((int16_t)read_data)  ;
+                *data = (signed_reg_type) ((int16_t)read_data)  ;
                 break;
             case MEM_WORD: 
                 // NOTE: sign extension
-                *data = (int64_t)((int32_t)read_data);
+                *data = (signed_reg_type)((int32_t)read_data);
                 break;
             case MEM_UBYTE:
             case MEM_UHALFWORD:
             case MEM_UWORD:
+#ifdef CONFIG_RV64
             case MEM_DWORD:
+#endif
                 *data = read_data ;
                 break ;
             default: 
@@ -510,6 +534,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
         }
     } else { // MULDIV
         // NOTE: signedness, special cases for division/remainder of certain numbers
+        // TODO: 32/64 bit
         uint64_t n1 = read_reg(rs1);
         uint64_t n2 = read_reg(rs2);
         uint64_t hi=0 , lo=0, result = 0;
@@ -891,6 +916,7 @@ void atomic_op(int sub7 , int rd , int rs1 , int rs2)
 }
 
 
+#ifdef CONFIG_RV64
 // 32bit atomic memory access instructions
 void atomic32_op(int sub7, int rd, int rs1, int rs2)
 {
@@ -951,9 +977,10 @@ void atomic32_op(int sub7, int rd, int rs1, int rs2)
         write_reg(rd, (int64_t)(int32_t)data);
     }
 }
+#endif
 
-
-uint64_t execute_one_instruction()
+// return: next pc
+reg_type execute_one_instruction()
 {
     uint32_t instr , opcode, sub3, sub7, rs1, rs2, rd, imm12, imm5, imm7, imm20;
     reg_type next_pc = -1;
@@ -1006,8 +1033,12 @@ uint64_t execute_one_instruction()
     case OP_ECALL: next_pc = ecall_op(sub3, sub7, rs1, rd, imm12); break;
     case OP_FENCEI: break; // TODO: don't need to anything until we have cache or pipeline
     case OP_A: 
-        if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); // TODO: 32bit
+#ifdef CONFIG_RV64
+        if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); 
         else atomic32_op(sub7, rd, rs1, rs2); break;  // fault for other sub3
+#else
+        atomic_op(sub7, rd, rs1, rs2); break;
+#endif
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
     if (next_pc == -1) next_pc = pc + 4;    // next instruction if there is no jump
@@ -1056,17 +1087,16 @@ void check_interrupt()
 // possible interrupts: timer + exceptions
 reg_type execute_interrupt(reg_type interrupt)
 {
-    uint64_t result = -1;
+    reg_type result = -1;
 
-    uint64_t mstatus = read_CSR(CSR_MSTATUS);
-    uint64_t exception_delegate = read_CSR(CSR_MEDELEG);
-    uint64_t interrupt_delegate = read_CSR(CSR_MIDELEG);
+    reg_type mstatus = read_CSR(CSR_MSTATUS);
+    reg_type exception_delegate = read_CSR(CSR_MEDELEG);
+    reg_type interrupt_delegate = read_CSR(CSR_MIDELEG);
     int delegated = 0;
 
-
     // TODO: delegated interrupts should check sie?
-    if (interrupt & 0x8000000000000000) {
-        int interrupt_no = interrupt & 0x7fffffff;
+    if (interrupt & (1LL<XLEN)) {
+        int interrupt_no = interrupt & 0x7fffffff;  // TODO: 32bit
         if (interrupt_no!=3 && interrupt_no!=7 && interrupt_no!=11) 
             delegated = (interrupt_no < 32) && (interrupt_delegate & (1LL << interrupt_no));
     }
@@ -1079,7 +1109,7 @@ reg_type execute_interrupt(reg_type interrupt)
         write_CSR(CSR_MCAUSE, interrupt);
         // mstatus: copy MIE to MPIE, clear MIE, copy current mode into MPP
         write_CSR(CSR_MSTATUS, ((read_CSR(CSR_MSTATUS) & CSR_MSTATUS_MIE) << 4) | (mode << 11));
-        write_CSR(CSR_MTVAL, (interrupt & 0x8000000000000000) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
+        write_CSR(CSR_MTVAL, (interrupt & (1LL<XLEN)) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
         write_CSR(CSR_MEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_M; // switch to M mode ;
         result = read_CSR(CSR_MTVEC);  // jump to interrupt routine, no vectoring support yet
@@ -1090,7 +1120,7 @@ reg_type execute_interrupt(reg_type interrupt)
         write_CSR(CSR_SCAUSE, interrupt);
         // mstatus: copy SIE to SPIE, clear SIE, copy current mode(one bit) into SPP
         write_CSR(CSR_SSTATUS, ((read_CSR(CSR_SSTATUS) & CSR_SSTATUS_SIE) << 4) | ((mode & 1) << 8));
-        write_CSR(CSR_STVAL, (interrupt & 0x8000000000000000) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
+        write_CSR(CSR_STVAL, (interrupt & (1LL<<XLEN)) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_S; // switch to S mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet
@@ -1101,6 +1131,7 @@ reg_type execute_interrupt(reg_type interrupt)
 }
 
 
+// cpu execution
 int execute_code()
 { 
     reg_type next_pc;
@@ -1128,6 +1159,7 @@ int execute_code()
     }
 }
 
+// CPU initialization
 int init_cpu(uint64_t start_pc)
 {
     // initialize CPU state
