@@ -94,7 +94,7 @@
 #define IO_UART_READY      0x10000005
 #define IO_UART_MODEMSTATUS 0x10000006
 /*
-#define IO_UART_START 0x3000000			// xv6 expects it at 0x10000000
+#define IO_UART_START 0x3000000			// xv6 expects it at 0x10000000, Linux at 0x3000000 (
 #define IO_UART_END   0x3000007
 #define IO_UART_DATA       0x3000000
 #define IO_UART_INTRENABLE 0x3000001

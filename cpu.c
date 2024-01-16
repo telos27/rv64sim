@@ -527,22 +527,27 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
     } else { // MULDIV
         // NOTE: signedness, special cases for division/remainder of certain numbers
         // TODO: 32/64 bit
-        uint64_t n1 = read_reg(rs1);
-        uint64_t n2 = read_reg(rs2);
-        uint64_t hi=0 , lo=0, result = 0;
+        reg_type n1 = read_reg(rs1);
+        reg_type n2 = read_reg(rs2);
+        reg_type hi=0 , lo=0, result = 0;
         switch (sub3) {
-        case MUL: result = ((int64_t)n1) * ((int64_t)n2); break;
-/* copy zap8600/rv64i-emu: the idea is to trap to emulate?
+        case MUL: result = ((signed_reg_type)n1) * ((signed_reg_type)n2); break;
+#ifdef CONFIG_RV64
+        case MULH: mul64wide(n1, n2, &result, &lo); break;
+        case MULHSU: mulhsu64wide(n1,n2,&result,&lo); break;
+        case MULHU: umul64wide(n1, n2, &result, &lo); break;     
+#else
         case MULH: result = (((int64_t)(int32_t)n1) * ((int64_t)(int32_t)n2)) >> 32; break;
         case MULHSU: result = (((int64_t)(int32_t)n1) * ((uint64_t)n2)) >> 32; break;
-        */
-        case MULHU: umul64wide(n1, n2, &result, &lo); break;     
+        case MULHU:result = (((uint64_t)n1) * ((uint64_t)n2)) >> 32; break;
+#endif
         case DIV: if (n2 == 0) result = -1; else
-            result = ((((int64_t)n1) == INT64_MIN) && ((int64_t)n2) == -1) ? n1 : (((int64_t)n1) / (int64_t)n2); break;
+            result = ((((signed_reg_type)n1) == SIGNED_REG_MIN) && ((signed_reg_type)n2) == -1) ? n1 
+                : (((signed_reg_type)n1) / (signed_reg_type)n2); break;
         case DIVU: result = (n2 == 0) ? -1 : (n1 / n2); break;
         case REM: if (n2 == 0) result = n1; else
-            result = ((((int64_t)n1) == INT64_MIN) && (((int64_t)n2) == -1)) ? 0 : 
-                (uint64_t)((int64_t)n1 % (int64_t)n2); 
+            result = ((((signed_reg_type)n1) == SIGNED_REG_MIN) && (((signed_reg_type)n2) == -1)) ? 0 : 
+                (reg_type)((signed_reg_type)n1 % (signed_reg_type)n2); 
             break;
         case REMU: result = (n2 == 0) ? n1 : (n1 % n2); break;
 
@@ -837,7 +842,7 @@ reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type im
         break;
     }
     case SYSTEM_CSRRSI: {
-        uint64_t value = read_CSR((int)imm12);
+        reg_type value = read_CSR((int)imm12);
         write_reg((int)rd, value);
         if (rs1 != 0) {
             write_CSR((int)imm12, value | rs1);    // TODO: unsettable bits?
@@ -845,7 +850,7 @@ reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type im
         break;
     }
     case SYSTEM_CSRRCI: {
-        uint64_t value = read_CSR((int)imm12);
+        reg_type value = read_CSR((int)imm12);
             write_reg((int)rd, value);
         if (rs1 != 0) {
             write_CSR((int)imm12, value & ~rs1);    // TODO: unsettable bits?
@@ -861,14 +866,14 @@ reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type im
 // atomic memory access instructions
 void atomic_op(int sub7 , int rd , int rs1 , int rs2)
 {
-    uint64_t data, data2 ,  addr;
+    reg_type data, data2 ,  addr;
 
     int lrsc = (sub7 & 0x8);    //bit 28 (bit 3 of sub7) covers both instructions ;
 
     // NOTE: register access order critical as rd&rs1 can be the same register
     addr = read_reg(rs1);   // memory address
     if (!lrsc) {
-        rw_memory(MEM_READ, addr, MEM_DWORD, &data);    // one piece of data in memory 
+        rw_memory(MEM_READ, addr, MEM_REG_SIZE, &data);    // one piece of data in memory 
         data2 = read_reg(rs2);  // the other piece in register
     }
 
@@ -877,11 +882,11 @@ void atomic_op(int sub7 , int rd , int rs1 , int rs2)
         switch ((sub7 & 0xc)>>2) {
         case AMO_ADD_ADD: data2 += data; break;
         case AMO_ADD_SWAP: break;
-        case AMO_ADD_LR: reservation = addr>>3; rw_memory(MEM_READ, addr, MEM_DWORD, &data); write_reg(rd, data); break;
+        case AMO_ADD_LR: reservation = addr>>3; rw_memory(MEM_READ, addr, MEM_REG_SIZE, &data); write_reg(rd, data); break;
         case AMO_ADD_SC: 
             if (reservation == (addr >>3)) {    // check to see if lr & sc match on address, i.e. reservation still there
                 data = read_reg(rs2);
-                rw_memory(MEM_WRITE, addr, MEM_DWORD, &data);
+                rw_memory(MEM_WRITE, addr, MEM_REG_SIZE, &data);
                 write_reg(rd, 0);
                 reservation = 0;
             } else {
@@ -893,8 +898,8 @@ void atomic_op(int sub7 , int rd , int rs1 , int rs2)
     case AMO_XOR: data2 ^= data ; break;
     case AMO_AND: data2 &= data; break;
     case AMO_OR: data2 |= data; break;
-    case AMO_MIN: data2 = ((int64_t)data < (int64_t)data2) ? data : data2; break;
-    case AMO_MAX: data2 = ((int64_t)data < (int64_t)data2) ? data2:data;  break;
+    case AMO_MIN: data2 = ((signed_reg_type)data < (signed_reg_type)data2) ? data : data2; break;
+    case AMO_MAX: data2 = ((signed_reg_type)data < (signed_reg_type)data2) ? data2:data;  break;
     case AMO_MINU: data2=(data<data2)?data:data2;  break;
     case AMO_MAXU: data2=(data<data2)?data2:data; break;
     default: interrupt = INT_ILLEGAL_INSTR; break;
@@ -902,7 +907,7 @@ void atomic_op(int sub7 , int rd , int rs1 , int rs2)
 
     if (!lrsc) {
         // after arithmetic operation, update memory and register
-        rw_memory(MEM_WRITE, addr, MEM_DWORD, &data2);
+        rw_memory(MEM_WRITE, addr, MEM_REG_SIZE, &data2);
         write_reg(rd, data);
     }
 }

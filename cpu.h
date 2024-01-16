@@ -9,6 +9,8 @@
 #define XLEN 64
 typedef uint64_t reg_type;			// unsigned register-sized integer
 typedef int64_t signed_reg_type;	// signed register-sized integer
+#define MEM_REG_SIZE MEM_DWORD		// size for memory access
+#define SIGNED_REG_MIN INT64_MIN
 #define SHIFT_MASK 0x3f
 #define SHIFT_REST_MASK 0x7e	// sub7 with one bit consumed by shift amount
 #define INTR_NONE 0xffffffffffffffff
@@ -18,6 +20,8 @@ typedef int64_t signed_reg_type;	// signed register-sized integer
 #define XLEN 32
 typedef uint32_t reg_type;
 typedef int32_t signed_reg_type;
+#define SIGNED_REG_MIN INT32_MIN
+#define MEM_REG_SIZE MEM_WORD
 #define SHIFT_MASK 0x1f
 #define SHIFT_REST_MASK 0x7f
 #define INTR_NONE 0xffffffff
