@@ -151,11 +151,6 @@ int vpn_seg[3] = { 0xffc00, 0x3ff,0 };  // bits [19:10] of vpn, bits[9:0], not u
 // external memory
 uint8_t mem[MEMSIZE];   // main memory
 
-// TODO: leftover from 32-bit impl, clean up
-// MEMIO range: currently CLINT & UART, and debug syscall
-#define MEMIO_START 0x10000000
-#define MEMIO_END 0x12000000    // exclusive
-
 #define NO_CSRS 4096
 
 // CPU internal state
@@ -229,11 +224,10 @@ reg_type write_CSR(int CSR_no, reg_type value)
 
 typedef reg_type PTE;
 
-// TODO: cover Sv32 as well
 // translate 27-bit vpn va to 44-bit ppn
 // mem_access_mode: instruction read, data read, data write
 // returns 0 if there is any kind of fault, which is stored in interrupt
-reg_type vpn2ppn(uint64_t vpn, int mem_access_mode, reg_type* interrupt)
+reg_type vpn2ppn(reg_type vpn, int mem_access_mode, reg_type* interrupt)
 {
     reg_type ppn = read_CSR(CSR_SATP) & CSR_SATP_PPN;       
     // 3 segments for Sv39, 2 segments for Sv32, the third one is not used
@@ -391,15 +385,14 @@ int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
 #ifdef CONFIG_RV64
     int do_vm = (satp >> 60) == CSR_SATP_MODE_SV39;
 #else
-    int do_vm = sat >> 31;  // one-bit
+    int do_vm = satp >> 31;  // one-bit
 #endif
     if (mode!=MODE_M && do_vm) {
         addr = (vpn2ppn(addr>>12 , mem_mode , &interrupt) << 12) | (addr & 0xfff);  // truncate 34 to 32 bits for Sv32
         if (interrupt!=INTR_NONE) return -1;
     }
     if (mem_mode==MEM_WRITE) {
-        if (addr >= MEMIO_START && addr < MEMIO_END ||
-            addr >= IO_CLINT_START && addr<IO_CLINT_END ||
+        if (addr >= IO_CLINT_START && addr<IO_CLINT_END ||
             addr >= IO_UART_START && addr < IO_UART_END ||
             addr >= IO_PLIC_START && addr < IO_PLIC_END ||
             addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
@@ -411,8 +404,7 @@ int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
     } else {    // both instruction and data read
         uint64_t read_data;
         int result;
-        if (addr >= MEMIO_START && addr < MEMIO_END ||
-            addr >= IO_CLINT_START && addr < IO_CLINT_END ||
+        if (addr >= IO_CLINT_START && addr < IO_CLINT_END ||
             addr >= IO_UART_START && addr < IO_UART_END ||
             addr >= IO_PLIC_START && addr < IO_PLIC_END ||
             addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
@@ -745,7 +737,7 @@ reg_type jalr_op(int rd, int rs1, unsigned int imm12)
 // NOTE: sign extend to 32 bits
 int auipc_op(int rd, unsigned int imm20)
 {
-    // TODO: 32bit
+    // nop for 32-bit
     write_reg(rd, pc + sign_extend(imm20 << 12 , 32));
     return 0;
 }
@@ -754,7 +746,7 @@ int auipc_op(int rd, unsigned int imm20)
 // NOTE: sign extend to 32 bits
 int lui_op(int rd, unsigned int imm20)
 {
-    // TODO: 32bit
+    // nop for 32-bit
     write_reg(rd, sign_extend(imm20 << 12 , 32));
     return 0;
 }

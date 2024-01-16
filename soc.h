@@ -3,7 +3,6 @@
 #define INITIAL_PC 0x80000000
 
 
-
 // machine-mode CSR, only defined the ones we currently use
 #define CSR_MSTATUS 0x300
 #define CSR_MISA 0x301

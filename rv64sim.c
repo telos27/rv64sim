@@ -11,14 +11,14 @@
 
 static uint64_t dtb_offset;    // offset to DTB
 
-// takes two optional argument: machine code file name & dtb file name
+// takes two optional argument: machine code file name & file system/dtb file name
 int main(int argc, char** argv)
 {
     init_soc();
     init_cpu(INITIAL_PC);
 
     load_code((argc <= 1) ? DEFAULT_FILE : argv[1]);
-    if (argc >= 2) {
+    if (argc >= 3) {
         load_dtb_or_fs(argv[2]);
     }
 
@@ -34,7 +34,7 @@ int main(int argc, char** argv)
 
 
 
-// load machine from file into memory starting at 0
+// load machine code from file into memory starting at 0
 int load_code(char* file_name)
 {
     // read instructions and save into memory
@@ -74,11 +74,11 @@ int load_dtb_or_fs(char* file_name)
     if (strstr(file_name, "dtb")) { // dtb file
         dtb_offset = MEMSIZE - len;  // do we need to store core structure in memory?
         dtb_offset &= ~(0x1fffffLL); // 2MB addr rounding, per QEMU/riscv_em
-        printf("dtb_addr=%llx\n", dtb_offset + INITIAL_PC);
-        dest = mem + dtb_offset;
+        // printf("dtb_addr=%llx\n", dtb_offset + INITIAL_PC);
+        dest = mem + dtb_offset;    // dtb is near the end of the memory
     }
     else {    // fs.img
-        dest = vio_disk;
+        dest = vio_disk;    // this is our emulated disk
     }
     if (fread(dest, len, 1, f) != 1)
     {
