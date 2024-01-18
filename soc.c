@@ -345,13 +345,13 @@ uint32_t io_read(uint64_t addr, uint64_t *data)
 		case IO_CLINT_TIMERL: *data = timer; break;
 		case IO_CLINT_TIMERMATCHL: *data = timer_match; break;		// turn off timer interrupt
 		// emulate UART behavior: different between 32-bit non-MMU Linux and xv6
-		case IO_UART_DATA: *data = uart_interrupt_pending ? uart_saved_char : 0; uart_interrupt_pending = 0;break;
+		case IO_UART_DATA: *data = *data = IsKBHit() ? ReadKBByte() : 0; break;
 		case IO_UART_INTRENABLE: *data = uart_interrupt; break;  // should not be readable, but Linux seems to read it
 		case IO_UART_INTRSTATUS: *data = 0; break;	// used by Linux driver?
 		case IO_UART_LINECTRL: *data = 0; break;	// used by Linux driver?
 		case IO_UART_MODEMCTRL: *data = 0; break;	// seems to be used by Linux driver
 		case IO_UART_MODEMSTATUS: *data = 0; break;	// seems to be used by Linux driver
-		case IO_UART_READY: *data = 0x60|uart_interrupt_pending; break;
+		case IO_UART_READY: *data = 0x60|IsKBHit(); break;
 		default: assert(0);break;
 	}
 	return 0;
