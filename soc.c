@@ -6,9 +6,9 @@
 #include <stdint.h>
 #include <assert.h>
 
+#include "cpu.h"
 #include "soc.h"
 
-#include "cpu.h"
 
 
 // CLINT I/O register states
@@ -128,7 +128,7 @@ void timer_tick()
 
 	// compare timer and set interrupt pending info
 	// MIP.MTIP is always updated: clear WFI & set MIP or clear MIP 
-	uint64_t mip = read_CSR(CSR_MIP);
+	reg_type mip = read_CSR(CSR_MIP);
 	if (timer > timer_match) {	// timer_match set (if not set, >= would sitll hold) and current time>=timer_match
 		wfi = 0;
 		write_CSR(CSR_MIP, mip | CSR_MIP_MTIP);
@@ -145,7 +145,7 @@ static unsigned int uart_tick_count;
 
 int uart_tick()
 {
-
+	/*
 	// do read when the buffer is empty
 	if (!uart_interrupt_pending) {
 		if (((uart_tick_count&0xff)==0) &&IsKBHit()) {
@@ -154,6 +154,7 @@ int uart_tick()
 		}
 	}
 	uart_tick_count++;
+	*/
 	return 0;
 }
 
@@ -172,8 +173,6 @@ uint32_t vio_interrupt_pending()
 
 int plic_tick()
 {
-
-
 	// rvemu seems to assume a single priority pending, it should calculate according to priority and pending
 	if (uart_interrupt_pending) {
 		plic_pending[0] |= 1 << 10;
@@ -333,7 +332,7 @@ int vio_disk_access()
 
 
 
-uint32_t io_read(uint64_t addr, uint64_t *data)
+uint32_t io_read(reg_type addr, reg_type *data)
 {
 	if (addr >= IO_PLIC_START && addr < IO_PLIC_END) {
 		return plic_read(addr, data);
@@ -358,7 +357,7 @@ uint32_t io_read(uint64_t addr, uint64_t *data)
 }
 
 // TODO: special mode for UART baud latch?
-uint32_t io_write(uint64_t addr, uint64_t* data)
+uint32_t io_write(reg_type addr, reg_type* data)
 {
 	if (addr >= IO_PLIC_START && addr < IO_PLIC_END) {
 		return plic_write(addr, data);

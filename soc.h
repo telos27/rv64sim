@@ -152,8 +152,8 @@
 extern uint32_t wfi;
 extern uint8_t* vio_disk;
 
-uint32_t io_read(uint64_t addr, uint64_t* data);
-uint32_t io_write(uint64_t addr, uint64_t* data);
+uint32_t io_read(reg_type addr, reg_type* data);
+uint32_t io_write(reg_type addr, reg_type* data);
 
 uint32_t init_soc();
 uint64_t soc_tick();
