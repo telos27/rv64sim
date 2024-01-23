@@ -11,6 +11,8 @@ Global
 		Debug|x86 = Debug|x86
 		Debug32|x64 = Debug32|x64
 		Debug32|x86 = Debug32|x86
+		Rel32|x64 = Rel32|x64
+		Rel32|x86 = Rel32|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
@@ -23,6 +25,10 @@ Global
 		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Debug32|x64.Build.0 = Debug32|x64
 		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Debug32|x86.ActiveCfg = Debug32|Win32
 		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Debug32|x86.Build.0 = Debug32|Win32
+		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Rel32|x64.ActiveCfg = Rel32|x64
+		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Rel32|x64.Build.0 = Rel32|x64
+		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Rel32|x86.ActiveCfg = Rel32|Win32
+		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Rel32|x86.Build.0 = Rel32|Win32
 		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Release|x64.ActiveCfg = Release|x64
 		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Release|x64.Build.0 = Release|x64
 		{2EDF3286-C0C7-4ED0-A97C-1D758E622D5B}.Release|x86.ActiveCfg = Release|Win32
