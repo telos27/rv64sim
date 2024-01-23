@@ -156,9 +156,9 @@ uint8_t mem[MEMSIZE];   // main memory
 // CPU internal state
 static reg_type regs[32];
 static reg_type CSRs[NO_CSRS];  // explicit init?
-reg_type pc ;       // 64-bit PC
-unsigned int mode;      // privilege mode: currently M only
-static reg_type reservation;   // address for lr/sc ; top 61 bits
+reg_type pc ;       
+unsigned int mode;      // privilege mode: M, S, U
+static reg_type reservation;   // address for lr/sc ; top 61/29 bits
 unsigned int wfi = 0;    // WFI flag 
 reg_type no_cycles; // execution cycles; currently always 1 cycle/instruction
 static reg_type interrupt;  // interrupt type
@@ -238,13 +238,7 @@ reg_type vpn2ppn(reg_type vpn, int mem_access_mode, reg_type* interrupt)
     {
         PTE pte;
 
-        pa_mem_interface(MEM_READ, (ppn << 12) | ((vpn_segment[i]>>(9*(PTE_LEVELS-i-1)))<<3),
-#ifdef CONFIG_RV64
-            MEM_DWORD
-#else
-            MEM_WORD
-#endif
-            , &pte, interrupt);	// physical address, no translation
+        pa_mem_interface(MEM_READ, (ppn << 12) | ((vpn_segment[i]>>(9*(PTE_LEVELS-i-1)))<<3), MEM_REG_SIZE , &pte, interrupt);	// physical address, no translation
         if (*interrupt != INTR_NONE) return 0;
 
         if ((pte & PTE_V) == 0 || ((pte & PTE_W) && !(pte & PTE_R))) {
@@ -477,7 +471,7 @@ static inline void mulhsu64wide(int64_t a, uint64_t b, int64_t* hi, int64_t* lo)
 
 #endif
 
-// NOTE: shift amount only uses 6-bits
+
 int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
 {
     if ((sub7 & 1) != 1) {  //non-MULDIV
@@ -507,7 +501,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
             break;
         case ALU_SRL:
             if ((sub7&SHIFT_REST_MASK) == NORMAL) {    // number of bits vary
-                write_reg(rd, read_reg(rs1) >> (read_reg(rs2) & 0x3f));
+                write_reg(rd, read_reg(rs1) >> (read_reg(rs2) & SHIFT_MASK));
             } else if ((sub7&SHIFT_REST_MASK) == SRA) {    
                 // signed right shift
                 write_reg(rd, ((signed_reg_type)read_reg(rs1)) >> (read_reg(rs2) & SHIFT_MASK));
@@ -517,7 +511,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
             }
             break;
         case ALU_SLT:
-            write_reg(rd, ((reg_type)read_reg(rs1) < (reg_type)read_reg(rs2)) ? 1 : 0);
+            write_reg(rd, ((signed_reg_type)read_reg(rs1) < (signed_reg_type)read_reg(rs2)) ? 1 : 0);
             break;
         case ALU_SLTU:
             write_reg(rd, (read_reg(rs1) < read_reg(rs2)) ? 1 : 0);
@@ -526,12 +520,11 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
         }
     } else { // MULDIV
         // NOTE: signedness, special cases for division/remainder of certain numbers
-        // TODO: 32/64 bit
         reg_type n1 = read_reg(rs1);
         reg_type n2 = read_reg(rs2);
         reg_type hi=0 , lo=0, result = 0;
         switch (sub3) {
-        case MUL: result = ((signed_reg_type)n1) * ((signed_reg_type)n2); break;
+        case MUL: result = n1*n2; break;
 #ifdef CONFIG_RV64
         case MULH: mul64wide(n1, n2, &result, &lo); break;
         case MULHSU: mulhsu64wide(n1,n2,&result,&lo); break;
@@ -619,7 +612,7 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
 
 #endif
 
-// NOTE: imm is already sign-extended; shift amount only uses 5 bits
+// NOTE: imm is already sign-extended
 int imm_op(int rd , int rs1 , int sub3 , int sub7 , reg_type imm)
 {
     switch (sub3) {
@@ -627,14 +620,14 @@ int imm_op(int rd , int rs1 , int sub3 , int sub7 , reg_type imm)
     case ALU_XOR: write_reg(rd, read_reg(rs1) ^ imm); break;
     case ALU_OR: write_reg(rd, read_reg(rs1) | imm); break;
     case ALU_AND: write_reg(rd, read_reg(rs1) & imm); break;
-    case ALU_SLL: write_reg(rd, read_reg(rs1) << (imm & 0x3f)); break;
+    case ALU_SLL: write_reg(rd, read_reg(rs1) << (imm & SHIFT_MASK)); break;
     case ALU_SRL:
         if ((sub7 & SHIFT_REST_MASK) == NORMAL) {  // variable number of bits
             write_reg(rd, read_reg(rs1) >> (imm & SHIFT_MASK));
         }
         else if ((sub7&SHIFT_REST_MASK) == SRA) {  // check 6 bits
             // signed right shift
-            write_reg(rd, ((reg_type)read_reg(rs1)) >> (imm & SHIFT_MASK));
+            write_reg(rd, ((signed_reg_type)read_reg(rs1)) >> (imm & SHIFT_MASK));
         }
         else {
             interrupt = INT_ILLEGAL_INSTR; // nonexistent sub7
@@ -732,7 +725,7 @@ reg_type jalr_op(int rd, int rs1, unsigned int imm12)
     // NOTE: write register afterwards, rd could be same as rs1
     reg_type saved_pc = pc + 4;
     // NOTE: sign extend , zero LSB
-    reg_type ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & (~1);
+    reg_type ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & 0xfffffffe;
     //printf("JALR: pc=%x , rd=%x , rs1=%x , imm12=%x , next=%x\n", pc , rd, rs1, imm12 ,  ret);
     write_reg(rd, saved_pc);
     return ret;
@@ -1157,7 +1150,7 @@ int execute_code()
 }
 
 // CPU initialization
-int init_cpu(uint64_t start_pc)
+int init_cpu(reg_type start_pc)
 {
     // initialize CPU state
     pc = start_pc ;

@@ -9,7 +9,7 @@
 // machine code file name, if unspecificed
 #define DEFAULT_FILE "asm.o"
 
-static uint64_t dtb_offset;    // offset to DTB
+static reg_type dtb_offset;    // offset to DTB
 
 // takes two optional argument: machine code file name & file system/dtb file name
 int main(int argc, char** argv)

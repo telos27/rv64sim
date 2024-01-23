@@ -16,8 +16,8 @@ static uint64_t timer = 0;	// part of CLINT, mtime in SiFive doc
 static uint64_t timer_match = 0;	// part of CLINT, mtimecmp in SiFive doc
 
 // UART state
-static uint64_t uart_interrupt = 0;
-static uint64_t uart_interrupt_pending;
+static uint32_t uart_interrupt = 0;
+static uint32_t uart_interrupt_pending;
 
 // virtio state
 static uint64_t virtio_interrupt_pending;
@@ -91,7 +91,7 @@ uint32_t plic_read(uint64_t addr, uint64_t* data)
 }
 
 
-uint32_t plic_write(uint64_t addr, uint64_t* data)
+uint32_t plic_write(reg_type addr, reg_type* data)
 {
 	if (addr >= PLIC_PRIORITY_START && addr < PLIC_PRIORITY_END) {
 		plic_priority[addr - PLIC_PRIORITY_START] = (uint32_t) *data;
@@ -135,7 +135,7 @@ void timer_tick()
 	}
 	else {
 		// TODO: ok to reset here? 
-		write_CSR(CSR_MIP, mip & ~((uint32_t)CSR_MIP_MTIP));
+		write_CSR(CSR_MIP, mip & ~((reg_type)CSR_MIP_MTIP));
 	}
 }
 
@@ -184,7 +184,7 @@ int plic_tick()
 		plic_claim = 1;
 	}
 	if (plic_claim > 0) {
-		uint64_t sip = read_CSR(CSR_SIP);
+		reg_type sip = read_CSR(CSR_SIP);
 		write_CSR(CSR_SIP, sip | CSR_SIP_SEIP);
 	}
 	return 0;
@@ -200,7 +200,7 @@ uint32_t init_vio()
 	return 0;
 }
 
-uint32_t vio_read(uint64_t addr, uint64_t* data)
+uint32_t vio_read(reg_type addr, reg_type* data)
 {
 	uint32_t offset = (uint32_t) (addr - IO_VIRTIO_START);
 	switch (offset) {
@@ -219,7 +219,7 @@ uint32_t vio_read(uint64_t addr, uint64_t* data)
 }
 
 
-uint32_t vio_write(uint64_t addr, uint64_t* data)
+uint32_t vio_write(reg_type addr, reg_type* data)
 {
 	uint32_t offset = (uint32_t) (addr - IO_VIRTIO_START);
 	switch (offset) {
@@ -249,32 +249,35 @@ uint32_t vio_write(uint64_t addr, uint64_t* data)
 
 int vio_disk_access()
 {
-	uint64_t mem_data, interrupt;
+	reg_type mem_data, interrupt;
 	// read 3 descriptors from virtual queue
 
 	// address of virt queue
-	uint64_t virtq = vio_queue_desc ;
+	reg_type virtq = vio_queue_desc ;
 
 	// address of avail 
-	uint64_t avail = vio_driver_desc;	
+	reg_type avail = vio_driver_desc;	
 	uint16_t avail_idx;
 	pa_mem_interface(MEM_READ, avail + 2, MEM_HALFWORD, &mem_data , &interrupt);	// read avail.idx
 	avail_idx = ((uint16_t)mem_data-1) % VIO_QUEUE_SIZE;
 	//printf("avail_idx=%d\n", avail_idx);
 
-	uint64_t head_index;
+	reg_type head_index;
 	pa_mem_interface(MEM_READ , avail+4 + avail_idx*2 , MEM_HALFWORD , &head_index , &interrupt);	
 
-	uint64_t desc0_addr;
+	reg_type desc0_addr;
+	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, virtq + 16 * head_index, MEM_DWORD, &desc0_addr, &interrupt);
 
 	uint64_t sector;
+	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, desc0_addr + 8, MEM_DWORD, &sector, &interrupt);		// LSB
 
 	uint64_t desc0_next;	// index for desc1
 	pa_mem_interface(MEM_READ, virtq + 16 * head_index + 14, MEM_HALFWORD, &desc0_next, &interrupt);
 
 	uint64_t desc1_addr;
+	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next , MEM_DWORD, &desc1_addr, &interrupt);
 
 	uint64_t desc1_len;
@@ -310,6 +313,7 @@ int vio_disk_access()
 
 	// set desc2's block to zero to mean completion
 	uint64_t desc2_addr;
+	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, virtq + 16 * desc1_next, MEM_DWORD, &desc2_addr, &interrupt);
 
 	data = 0;
@@ -317,7 +321,7 @@ int vio_disk_access()
 
 	// update used
 	// address of used
-	uint64_t used = vio_device_desc ;	
+	reg_type used = vio_device_desc ;	
 
 	// update used.idx; 
 	// NOTE: need to take mod
@@ -341,8 +345,13 @@ uint32_t io_read(reg_type addr, reg_type *data)
 		return vio_read(addr, data);
 	}
 	switch (addr) {
+#ifdef CONFIG_RV64
 		case IO_CLINT_TIMERL: *data = timer; break;
 		case IO_CLINT_TIMERMATCHL: *data = timer_match; break;		// turn off timer interrupt
+#else
+	case IO_CLINT_TIMERL: *data = timer&0xffffffff; break;
+	case IO_CLINT_TIMERH: *data = timer>>32; break;
+#endif
 		// emulate UART behavior: different between 32-bit non-MMU Linux and xv6
 		case IO_UART_DATA: *data = *data = IsKBHit() ? ReadKBByte() : 0; break;
 		case IO_UART_INTRENABLE: *data = uart_interrupt; break;  // should not be readable, but Linux seems to read it
@@ -350,6 +359,7 @@ uint32_t io_read(reg_type addr, reg_type *data)
 		case IO_UART_LINECTRL: *data = 0; break;	// used by Linux driver?
 		case IO_UART_MODEMCTRL: *data = 0; break;	// seems to be used by Linux driver
 		case IO_UART_MODEMSTATUS: *data = 0; break;	// seems to be used by Linux driver
+
 		case IO_UART_READY: *data = 0x60|IsKBHit(); break;
 		default: assert(0);break;
 	}
@@ -368,14 +378,21 @@ uint32_t io_write(reg_type addr, reg_type* data)
 	switch (addr) {
 	//	case IO_CLINT_TIMERL: timer_l = *data; break;
 	//	case IO_CLINT_TIMERH: timer_h = *data; break;
+#ifdef CONFIG_RV64
 	case IO_CLINT_TIMERMATCHL: timer_match = *data; timer_tick();/*printf("timer match=%llu, time=%llu\n", timer_match, timer); */break;
+#else
+	case IO_CLINT_TIMERMATCHL: timer_match = (timer_match&0xffffffff00000000)|(*data); break;
+	case IO_CLINT_TIMERMATCHH: timer_match = (timer_match&0xffffffff)|(((uint64_t)(*data))<<32); break;
+#endif
 		// emulate UART behavior; LCR and FCR write should be ok
-		case IO_UART_DATA: printf("%c",(int) *data); fflush(stdout); break ;
+		case IO_UART_DATA: printf("%c",*data); fflush(stdout); break ;
 		case IO_UART_INTRENABLE: uart_interrupt = *data; break;
 		case IO_UART_LINECTRL: break;
+
 		case IO_UART_FIFOCTRL: break;
 		case IO_UART_MODEMCTRL: break;	// seems to be used by Linux driver
 		case IO_DEBUG: debug_syscall(); break;	// debugging only
+	
 		default: assert(0);break;
 	}
 	return 0;
