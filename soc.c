@@ -469,21 +469,6 @@ if (is_escape_sequence)
 
 
 
-void virtio_tick()
-{
-}
-
-
-int soc_tick()
-{
-	uart_tick();
-	virtio_tick();
-	plic_tick();
-	timer_tick();
-
-	return 0;
-}
-
 #else
 
 uint64_t get_microseconds()
@@ -517,6 +502,22 @@ static int IsKBHit()
 }
 
 #endif
+
+
+void virtio_tick()
+{
+}
+
+
+int soc_tick()
+{
+	uart_tick();
+	virtio_tick();
+	plic_tick();
+	timer_tick();
+
+	return 0;
+}
 
 // initialize all SOC components
 uint32_t init_soc()
