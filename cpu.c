@@ -252,7 +252,7 @@ reg_type vpn2ppn(reg_type vpn, int mem_access_mode, reg_type* interrupt)
 
             // check superpage alignment: the last segments of the PPN should all be 0
             for (int j = i + 1; j < PTE_LEVELS; j++) {
-                if (result & vpn_seg[j]!=0) {
+                if ((result & vpn_seg[j])!=0) {
                     *interrupt = INT_INSTR_PAGEFAULT + mem_access_mode;
                     return 0;
                 }
@@ -396,7 +396,7 @@ int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
             return pa_mem_interface(mem_mode, addr, sub3, data , &interrupt);
         }
     } else {    // both instruction and data read
-        uint64_t read_data;
+        reg_type read_data;
         int result;
         if (addr >= IO_CLINT_START && addr < IO_CLINT_END ||
             addr >= IO_UART_START && addr < IO_UART_END ||
@@ -772,7 +772,7 @@ reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type im
             mode = (mstatus & CSR_MSTATUS_MPP) >> 11;  // restore CPU mode from MPP ;
             // mie = mpie ; mpie=1 ; mpp = mode
             write_CSR(CSR_MSTATUS, (prev_mode << 11) | CSR_MSTATUS_MPIE | ((mstatus & CSR_MSTATUS_MPIE) >> 4));
-            uint64_t next_pc = read_CSR(CSR_MEPC);
+            reg_type next_pc = read_CSR(CSR_MEPC);
  //           printf("MRET: pc=0x%x, cycles=0x%x , next_pc=0x%x\n", pc, no_cycles , next_pc);
             return next_pc;
         }
@@ -782,7 +782,7 @@ reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type im
             mode = (sstatus & CSR_SSTATUS_SPP) >> 8;  // restore CPU mode from SPP (NOTE: one bit only) ;
             // mie = mpie ; mpie=1 ; spp = mode[0]
             write_CSR(CSR_SSTATUS, ((prev_mode&1) << 8) | CSR_SSTATUS_SPIE | ((sstatus & CSR_SSTATUS_SPIE) >> 4));
-            uint64_t next_pc = read_CSR(CSR_SEPC);
+            reg_type next_pc = read_CSR(CSR_SEPC);
  //         printf("SRET: pc=0x%llx, cycles=0x%llx , next_pc=0x%llx\n", pc, no_cycles , next_pc);
             return next_pc;
         }
@@ -818,8 +818,8 @@ reg_type ecall_op(int sub3 , int sub7 , reg_type rs1 , reg_type rd , reg_type im
         break;
     }
     case SYSTEM_CSRRC: {
-        uint64_t new_value = read_reg((int)rs1);
-        uint64_t value = read_CSR((int)imm12);
+        reg_type new_value = read_reg((int)rs1);
+        reg_type value = read_CSR((int)imm12);
         write_reg((int)rd, value);
         if (rs1 != 0) {
             write_CSR((int)imm12, value & ~new_value);    // TODO: unsettable bits?

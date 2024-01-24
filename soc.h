@@ -1,5 +1,20 @@
 #pragma once
 
+#if defined(WINDOWS) || defined(WIN32) || defined(_WIN32)
+#include <windows.h>
+#include <conio.h>
+#else
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/time.h>
+#include <limits.h>
+#define TRUE 1
+#define FALSE 0
+#endif
+
+
 #define INITIAL_PC 0x80000000
 
 

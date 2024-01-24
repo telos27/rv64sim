@@ -1,15 +1,22 @@
 ﻿// clint.c: CLINT, UART, PLIC, virtio emulation
 #include <stdint.h>
-#include <windows.h>
 #include <conio.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
+#include <stdlib.h>
+
+#if defined(WINDOWS) || defined(WIN32) || defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include "cpu.h"
 #include "soc.h"
 
+static int vio_disk_access();
 
+static int IsKBHit();
+static int ReadKBByte();
 
 // CLINT I/O register states
 static uint64_t timer = 0;	// part of CLINT, mtime in SiFive doc
@@ -30,12 +37,12 @@ static uint64_t virtio_interrupt_pending;
 #define VRING_DESC_F_WRITE 2 // device writes (vs read)
 
 static uint32_t vio_queue_num;
-static uint64_t vio_queue_desc, vio_driver_desc, vio_device_desc;
+static reg_type vio_queue_desc, vio_driver_desc, vio_device_desc;
 static uint32_t vio_queue_align;
 static uint32_t vio_status;
 static uint32_t vio_queue_notify = UINT32_MAX;
 static uint32_t vio_queue_ready;
-static uint64_t vio_used_idx;	// matches virtq.used.idx
+static reg_type vio_used_idx;	// matches virtq.used.idx
 uint8_t* vio_disk;	// disk space, allocated in init
 
 // PLIC state
@@ -72,7 +79,7 @@ void debug_syscall()
 
 
 
-uint32_t plic_read(uint64_t addr, uint64_t* data)
+uint32_t plic_read(reg_type addr, reg_type* data)
 {
 	if (addr >= PLIC_PRIORITY_START && addr < PLIC_PRIORITY_END) {
 		*data = plic_priority[addr - PLIC_PRIORITY_START];
@@ -191,7 +198,7 @@ int plic_tick()
 }
 
 
-
+// TODO: check vio for 32-bit mode
 
 uint32_t init_vio()
 {
@@ -247,7 +254,7 @@ uint32_t vio_write(reg_type addr, reg_type* data)
 
 
 
-int vio_disk_access()
+static int vio_disk_access()
 {
 	reg_type mem_data, interrupt;
 	// read 3 descriptors from virtual queue
@@ -273,29 +280,29 @@ int vio_disk_access()
 	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, desc0_addr + 8, MEM_DWORD, &sector, &interrupt);		// LSB
 
-	uint64_t desc0_next;	// index for desc1
+	reg_type desc0_next;	// index for desc1
 	pa_mem_interface(MEM_READ, virtq + 16 * head_index + 14, MEM_HALFWORD, &desc0_next, &interrupt);
 
-	uint64_t desc1_addr;
+	reg_type desc1_addr;
 	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next , MEM_DWORD, &desc1_addr, &interrupt);
 
-	uint64_t desc1_len;
+	reg_type desc1_len;
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 8, MEM_WORD, &desc1_len, &interrupt);
 
-	uint64_t desc1_flags;
+	reg_type desc1_flags;
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 12, MEM_HALFWORD, &desc1_flags, &interrupt);
 
-	uint64_t desc1_next;
+	reg_type desc1_next;
 	pa_mem_interface(MEM_READ, virtq + 16 * desc0_next + 14, MEM_HALFWORD, &desc1_next, &interrupt);
 
-	uint64_t data;	// only 1 byte used
+	reg_type data;	// only 1 byte used
 
 	assert(sector>0 && sector * SECTOR_SIZE + desc1_len < 64 * 1024 * 1024);
 
 	// NOTE: write means device writes to buffer, which is actually a disk read
 	if ((desc1_flags & VRING_DESC_F_WRITE)==0) {
-		for (int i = 0; i < desc1_len; i++) {
+		for (int i = 0; i < (signed_reg_type) desc1_len; i++) {
 			pa_mem_interface(MEM_READ, desc1_addr + i, MEM_BYTE , &data, &interrupt);
 			vio_disk[sector * SECTOR_SIZE + i] = (uint8_t) data;
 			
@@ -303,7 +310,7 @@ int vio_disk_access()
 //		printf("vio: [0x%lx] -> sector %ld, len=%d\n", desc1_addr, sector, desc1_len);
 	}
 	else {
-		for (int i = 0; i < desc1_len; i++) {
+		for (int i = 0; i < (signed_reg_type)desc1_len; i++) {
 			data = vio_disk[sector * SECTOR_SIZE + i];
 			pa_mem_interface(MEM_WRITE, desc1_addr + i, MEM_BYTE, &data, &interrupt);
 //			printf("vio read: mem[%llx] = %d\n", desc1_addr + i, (uint32_t)data);
@@ -312,7 +319,7 @@ int vio_disk_access()
 	}
 
 	// set desc2's block to zero to mean completion
-	uint64_t desc2_addr;
+	reg_type desc2_addr;
 	// TODO: 32-bit
 	pa_mem_interface(MEM_READ, virtq + 16 * desc1_next, MEM_DWORD, &desc2_addr, &interrupt);
 
@@ -398,8 +405,9 @@ uint32_t io_write(reg_type addr, reg_type* data)
 	return 0;
 }
 
+#if defined(WINDOWS) || defined(WIN32) || defined(_WIN32)
 
-// get current microsecond, Windows-specific, need future porting
+// get current microsecond
 uint64_t get_microseconds()
 {
 	static LARGE_INTEGER lpf;
@@ -475,6 +483,40 @@ uint64_t soc_tick()
 
 	return 0;
 }
+
+#else
+
+uint64_t get_microseconds()
+{
+	struct timeval tv;
+	gettimeofday(&tv, 0);
+	return tv.tv_usec + ((uint64_t)(tv.tv_sec)) * 1000000LL;
+}
+
+static int is_eofd;
+
+static int ReadKBByte()
+{
+	if (is_eofd) return 0xffffffff;
+	char rxchar = 0;
+	int rread = read(fileno(stdin), (char*)&rxchar, 1);
+
+	if (rread > 0) // Tricky: getchar can't be used with arrow keys.
+		return rxchar;
+	else
+		return -1;
+}
+
+static int IsKBHit()
+{
+	if (is_eofd) return -1;
+	int byteswaiting;
+	ioctl(0, FIONREAD, &byteswaiting);
+	if (!byteswaiting && write(fileno(stdin), 0, 0) != 0) { is_eofd = 1; return -1; } // Is end-of-file for 
+	return !!byteswaiting;
+}
+
+#endif
 
 // initialize all SOC components
 uint32_t init_soc()
