@@ -1,12 +1,12 @@
 ﻿// clint.c: CLINT, UART, PLIC, virtio emulation
 #include <stdint.h>
-#include <conio.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
 #include <stdlib.h>
 
 #if defined(WINDOWS) || defined(WIN32) || defined(_WIN32)
+#include <conio.h>
 #include <windows.h>
 #endif
 
