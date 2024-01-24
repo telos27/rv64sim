@@ -474,7 +474,7 @@ void virtio_tick()
 }
 
 
-uint64_t soc_tick()
+int soc_tick()
 {
 	uart_tick();
 	virtio_tick();
