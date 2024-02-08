@@ -389,7 +389,9 @@ int rw_memory(int mem_mode, reg_type addr, int sub3, reg_type* data)
         if (addr >= IO_CLINT_START && addr<IO_CLINT_END ||
             addr >= IO_UART_START && addr < IO_UART_END ||
             addr >= IO_PLIC_START && addr < IO_PLIC_END ||
-            addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END) {
+            addr >= IO_VIRTIO_START && addr < IO_VIRTIO_END ||
+            addr == IO_DEBUG
+            ) {
             return io_write(addr, data);
         }
         else {
@@ -703,7 +705,7 @@ reg_type branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned i
      //       imm7, offset, ret);
         return ret;
     } else {
-        return (reg_type) - 1;
+        return (reg_type) -1;
     }
 }
 
@@ -1031,6 +1033,8 @@ reg_type execute_one_instruction()
 #endif
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
+
+   // printf("cycle=%ld , pc=0x%x , x31=0x%x\n", no_cycles, pc, regs[31]);
     if (next_pc == -1) next_pc = pc + 4;    // next instruction if there is no jump
     return next_pc;
 }
@@ -1085,7 +1089,7 @@ reg_type execute_interrupt(reg_type interrupt)
     int delegated = 0;
 
     // TODO: delegated interrupts should check sie?
-    if (interrupt & (1LL<XLEN)) {
+    if (interrupt & (1LL<(XLEN-1))) {
         int interrupt_no = interrupt & 0x7fffffff;  // TODO: 32bit
         if (interrupt_no!=3 && interrupt_no!=7 && interrupt_no!=11) 
             delegated = (interrupt_no < 32) && (interrupt_delegate & (1LL << interrupt_no));
@@ -1099,7 +1103,7 @@ reg_type execute_interrupt(reg_type interrupt)
         write_CSR(CSR_MCAUSE, interrupt);
         // mstatus: copy MIE to MPIE, clear MIE, copy current mode into MPP
         write_CSR(CSR_MSTATUS, ((read_CSR(CSR_MSTATUS) & CSR_MSTATUS_MIE) << 4) | (mode << 11));
-        write_CSR(CSR_MTVAL, (interrupt & (1LL<XLEN)) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
+        write_CSR(CSR_MTVAL, (interrupt & (1LL<(XLEN-1))) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
         write_CSR(CSR_MEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_M; // switch to M mode ;
         result = read_CSR(CSR_MTVEC);  // jump to interrupt routine, no vectoring support yet
@@ -1110,7 +1114,7 @@ reg_type execute_interrupt(reg_type interrupt)
         write_CSR(CSR_SCAUSE, interrupt);
         // mstatus: copy SIE to SPIE, clear SIE, copy current mode(one bit) into SPP
         write_CSR(CSR_SSTATUS, ((read_CSR(CSR_SSTATUS) & CSR_SSTATUS_SIE) << 4) | ((mode & 1) << 8));
-        write_CSR(CSR_STVAL, (interrupt & (1LL<<XLEN)) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
+        write_CSR(CSR_STVAL, (interrupt & (1LL<<(XLEN-1))) ? 0 : pc);   // TODO: can provide diff info for certain types of interrupts 
         write_CSR(CSR_SEPC, pc);    // NOTE: interrupt and exception cases are different, but both should save the current pc
         mode = MODE_S; // switch to S mode ;
         result = read_CSR(CSR_STVEC);  // jump to interrupt routine, no vectoring support yet

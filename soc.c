@@ -152,16 +152,16 @@ static unsigned int uart_tick_count;
 
 int uart_tick()
 {
-	/*
+	
 	// do read when the buffer is empty
-	if (!uart_interrupt_pending) {
+	if (!uart_interrupt_pending && uart_interrupt==3) {
 		if (((uart_tick_count&0xff)==0) &&IsKBHit()) {
 			uart_saved_char = ReadKBByte();
 			uart_interrupt_pending = 1;
 		}
 	}
 	uart_tick_count++;
-	*/
+	
 	return 0;
 }
 
@@ -360,7 +360,15 @@ uint32_t io_read(reg_type addr, reg_type *data)
 	case IO_CLINT_TIMERH: *data = timer>>32; break;
 #endif
 		// emulate UART behavior: different between 32-bit non-MMU Linux and xv6
-		case IO_UART_DATA: *data = *data = IsKBHit() ? ReadKBByte() : 0; break;
+		case IO_UART_DATA: 
+			if (uart_interrupt == 3) {
+				*data = uart_interrupt_pending ? uart_saved_char : 0; 
+				uart_interrupt_pending = 0;
+			}
+			else {
+				*data = IsKBHit() ? ReadKBByte() : 0;
+			}
+			break;
 		case IO_UART_INTRENABLE: *data = uart_interrupt; break;  // should not be readable, but Linux seems to read it
 		case IO_UART_INTRSTATUS: *data = 0; break;	// used by Linux driver?
 		case IO_UART_LINECTRL: *data = 0; break;	// used by Linux driver?
@@ -392,8 +400,8 @@ uint32_t io_write(reg_type addr, reg_type* data)
 	case IO_CLINT_TIMERMATCHH: timer_match = (timer_match&0xffffffff)|(((uint64_t)(*data))<<32); break;
 #endif
 		// emulate UART behavior; LCR and FCR write should be ok
-		case IO_UART_DATA: printf("%c",*data); fflush(stdout); break ;
-		case IO_UART_INTRENABLE: uart_interrupt = *data; break;
+		case IO_UART_DATA: printf("%c", (int)*data); fflush(stdout); break ;
+		case IO_UART_INTRENABLE: uart_interrupt = (uint32_t)*data;	printf("uart_interrupt=%d\n", uart_interrupt); break;
 		case IO_UART_LINECTRL: break;
 
 		case IO_UART_FIFOCTRL: break;
