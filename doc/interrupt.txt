@@ -1,0 +1,68 @@
+Detailed RISC-V Interrupt Handling
+
+* M and U modes only
+
+interrupt types:
+	* M: timer
+	* exceptions: caused by instruction execution
+
+States:
+* CSRs
+	* mstatus: mpp, mie , mpie
+		mpp:  machine previous privilege mode
+		mie: machine interrupt enable
+		mpie: machine previous interrupt enable
+		* set when entering and exiting interrupt handlers
+		* can set mie to enable or disable interrupts
+	* mip: msip , meip, mtip
+		* set by CPU upon receipt of signal from CLINT or PLIC
+		* read by CPU when checking to see if there is interrupt to be handled
+		* can be cleared by source
+	* mie: msie , meie , mtie
+		* written by OS to enable/disable individual interrupts, overall control is at mstatus.mie
+		* used by CPU to decide whether to handle the corresponding type of interrupt
+	* mcause
+		* set by CPU when handlingan interrupt
+		* used in interrupt hanlder
+	* mepc
+		* set by CPU when handling an interrupt
+		* used by mret to return to the next instruction
+	* mtvec: interrupt handler address (could be vectored)
+		* set by OS
+		* used by CPU to handle interrupt
+	* mtval
+		* set by CPU when there is an interrupt
+		* can be used by interrupt handler
+* memory-mapped I/O registers
+	* mtime (64bit)
+		* time, updated by CLINT according to external clock
+	* mtimecmp (64bit)
+		* user settable
+		* will raise timer interrupt if mtime >= mtimecmp; CLINT will send signal to CPU, which updates mtip
+		* set a bigger mtimecmp to clear the interrupt
+	* msip
+		* software write to set/clear
+		* CLINT uses it to generate software interrupt signal to CPU, CPU sets msip accordingly
+* internal state
+	* cpu mode
+		* changed when handling and returning from interrupt
+
+CPU per-cycle processing:
+* caused by instruction: ebreak/ecall, illegal instructionse etc.
+* timer
+
+before executing each instruction, check to see if there is a timer interrupt
+	* mip.mtip && mie.mtie && mstatus.mie && not M mode
+
+after executing each instruction, check to see if there is an interrupt to be handled (no software/external interrupt yet)
+	if (timer interrupt || exception)
+		mstatus.mpp = mode ; mstatus.mpie = mstatus.mie ; mstatus.mie = 0 ;
+		mepc = PC
+		set mcause, mtval
+		mode = M 
+		jump to mtvec (no vectoring yet)
+
+mret instruction:
+* set mode to mstatus.mpp
+* mstatus: mie = mpie ; mpie=1 (spec) ; mpp = mode (should be u )
+* jump to mepc 
