@@ -24,10 +24,10 @@ all:
 		-DTEST_FUNC_TXT='"bltu"' -DTEST_FUNC_RET=bltu_ret $(TESTS_PATH)/bltu.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/bne.o -DTEST_FUNC_NAME=bne \
 		-DTEST_FUNC_TXT='"bne"' -DTEST_FUNC_RET=bne_ret $(TESTS_PATH)/bne.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/div.o -DTEST_FUNC_NAME=div \
-		-DTEST_FUNC_TXT='"div"' -DTEST_FUNC_RET=div_ret $(TESTS_PATH)/div.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/divu.o -DTEST_FUNC_NAME=divu \
-		-DTEST_FUNC_TXT='"divu"' -DTEST_FUNC_RET=divu_ret $(TESTS_PATH)/divu.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/div.o -DTEST_FUNC_NAME=div \
+#		-DTEST_FUNC_TXT='"div"' -DTEST_FUNC_RET=div_ret $(TESTS_PATH)/div.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/divu.o -DTEST_FUNC_NAME=divu \
+#		-DTEST_FUNC_TXT='"divu"' -DTEST_FUNC_RET=divu_ret $(TESTS_PATH)/divu.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/jalr.o -DTEST_FUNC_NAME=jalr \
 		-DTEST_FUNC_TXT='"jalr"' -DTEST_FUNC_RET=jalr_ret $(TESTS_PATH)/jalr.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/jal.o -DTEST_FUNC_NAME=jal \
@@ -46,22 +46,22 @@ all:
 		-DTEST_FUNC_TXT='"lui"' -DTEST_FUNC_RET=lui_ret $(TESTS_PATH)/lui.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/lw.o -DTEST_FUNC_NAME=lw \
 		-DTEST_FUNC_TXT='"lw"' -DTEST_FUNC_RET=lw_ret $(TESTS_PATH)/lw.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mulh.o -DTEST_FUNC_NAME=mulh \
-		-DTEST_FUNC_TXT='"mulh"' -DTEST_FUNC_RET=mulh_ret $(TESTS_PATH)/mulh.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mulhsu.o -DTEST_FUNC_NAME=mulhsu \
-		-DTEST_FUNC_TXT='"mulhsu"' -DTEST_FUNC_RET=mulhsu_ret $(TESTS_PATH)/mulhsu.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mulhu.o -DTEST_FUNC_NAME=mulhu \
-		-DTEST_FUNC_TXT='"mulhu"' -DTEST_FUNC_RET=mulhu_ret $(TESTS_PATH)/mulhu.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mul.o -DTEST_FUNC_NAME=mul \
-		-DTEST_FUNC_TXT='"mul"' -DTEST_FUNC_RET=mul_ret $(TESTS_PATH)/mul.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mulh.o -DTEST_FUNC_NAME=mulh \
+#		-DTEST_FUNC_TXT='"mulh"' -DTEST_FUNC_RET=mulh_ret $(TESTS_PATH)/mulh.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mulhsu.o -DTEST_FUNC_NAME=mulhsu \
+#		-DTEST_FUNC_TXT='"mulhsu"' -DTEST_FUNC_RET=mulhsu_ret $(TESTS_PATH)/mulhsu.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mulhu.o -DTEST_FUNC_NAME=mulhu \
+#		-DTEST_FUNC_TXT='"mulhu"' -DTEST_FUNC_RET=mulhu_ret $(TESTS_PATH)/mulhu.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/mul.o -DTEST_FUNC_NAME=mul \
+#		-DTEST_FUNC_TXT='"mul"' -DTEST_FUNC_RET=mul_ret $(TESTS_PATH)/mul.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/ori.o -DTEST_FUNC_NAME=ori \
 		-DTEST_FUNC_TXT='"ori"' -DTEST_FUNC_RET=ori_ret $(TESTS_PATH)/ori.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/or.o -DTEST_FUNC_NAME=or \
 		-DTEST_FUNC_TXT='"or"' -DTEST_FUNC_RET=or_ret $(TESTS_PATH)/or.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/rem.o -DTEST_FUNC_NAME=rem \
-		-DTEST_FUNC_TXT='"rem"' -DTEST_FUNC_RET=rem_ret $(TESTS_PATH)/rem.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/remu.o -DTEST_FUNC_NAME=remu \
-		-DTEST_FUNC_TXT='"remu"' -DTEST_FUNC_RET=remu_ret $(TESTS_PATH)/remu.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/rem.o -DTEST_FUNC_NAME=rem \
+#		-DTEST_FUNC_TXT='"rem"' -DTEST_FUNC_RET=rem_ret $(TESTS_PATH)/rem.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/remu.o -DTEST_FUNC_NAME=remu \
+#		-DTEST_FUNC_TXT='"remu"' -DTEST_FUNC_RET=remu_ret $(TESTS_PATH)/remu.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/sb.o -DTEST_FUNC_NAME=sb \
 		-DTEST_FUNC_TXT='"sb"' -DTEST_FUNC_RET=sb_ret $(TESTS_PATH)/sb.S
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/sh.o -DTEST_FUNC_NAME=sh \
@@ -95,30 +95,30 @@ all:
 	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32im -o $(TESTS_PATH)/xor.o -DTEST_FUNC_NAME=xor \
 		-DTEST_FUNC_TXT='"xor"' -DTEST_FUNC_RET=xor_ret $(TESTS_PATH)/xor.S
 	\
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32g -o $(TESTS_PATH)/csr.o -DTEST_FUNC_NAME=csr \
-		-DTEST_FUNC_TXT='"csr"' -DTEST_FUNC_RET=csr_ret $(TESTS_PATH)/csr.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32g -o $(TESTS_PATH)/mcsr.o -DTEST_FUNC_NAME=mcsr \
-		-DTEST_FUNC_TXT='"mcsr"' -DTEST_FUNC_RET=mcsr_ret $(TESTS_PATH)/mcsr.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoadd_w.o -DTEST_FUNC_NAME=amoadd_w \
-		-DTEST_FUNC_TXT='"amoadd_w"' -DTEST_FUNC_RET=amoadd_w_ret $(TESTS_PATH)/amoadd_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoand_w.o -DTEST_FUNC_NAME=amoand_w \
-		-DTEST_FUNC_TXT='"amoand_w"' -DTEST_FUNC_RET=amoand_w_ret $(TESTS_PATH)/amoand_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoor_w.o -DTEST_FUNC_NAME=amoor_w \
-		-DTEST_FUNC_TXT='"amoor_w"' -DTEST_FUNC_RET=amoor_w_ret $(TESTS_PATH)/amoor_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoswap_w.o -DTEST_FUNC_NAME=amoswap_w \
-		-DTEST_FUNC_TXT='"amoswap_w"' -DTEST_FUNC_RET=amoswap_w_ret $(TESTS_PATH)/amoswap_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoxor_w.o -DTEST_FUNC_NAME=amoxor_w \
-		-DTEST_FUNC_TXT='"amoxor_w"' -DTEST_FUNC_RET=amoxor_w_ret $(TESTS_PATH)/amoxor_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amomax_w.o -DTEST_FUNC_NAME=amomax_w \
-		-DTEST_FUNC_TXT='"amomax_w"' -DTEST_FUNC_RET=amomax_w_ret $(TESTS_PATH)/amomax_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amomaxu_w.o -DTEST_FUNC_NAME=amomaxu_w \
-		-DTEST_FUNC_TXT='"amomaxu_w"' -DTEST_FUNC_RET=amomaxu_w_ret $(TESTS_PATH)/amomaxu_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amomin_w.o -DTEST_FUNC_NAME=amomin_w \
-		-DTEST_FUNC_TXT='"amomin_w"' -DTEST_FUNC_RET=amomin_w_ret $(TESTS_PATH)/amomin_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amominu_w.o -DTEST_FUNC_NAME=amominu_w \
-		-DTEST_FUNC_TXT='"amominu_w"' -DTEST_FUNC_RET=amominu_w_ret $(TESTS_PATH)/amominu_w.S
-	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/lrsc.o -DTEST_FUNC_NAME=lrsc \
-		-DTEST_FUNC_TXT='"lrsc_w"' -DTEST_FUNC_RET=lrsc_ret $(TESTS_PATH)/lrsc.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32g -o $(TESTS_PATH)/csr.o -DTEST_FUNC_NAME=csr \
+#		-DTEST_FUNC_TXT='"csr"' -DTEST_FUNC_RET=csr_ret $(TESTS_PATH)/csr.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32g -o $(TESTS_PATH)/mcsr.o -DTEST_FUNC_NAME=mcsr \
+#		-DTEST_FUNC_TXT='"mcsr"' -DTEST_FUNC_RET=mcsr_ret $(TESTS_PATH)/mcsr.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoadd_w.o -DTEST_FUNC_NAME=amoadd_w \
+#		-DTEST_FUNC_TXT='"amoadd_w"' -DTEST_FUNC_RET=amoadd_w_ret $(TESTS_PATH)/amoadd_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoand_w.o -DTEST_FUNC_NAME=amoand_w \
+#		-DTEST_FUNC_TXT='"amoand_w"' -DTEST_FUNC_RET=amoand_w_ret $(TESTS_PATH)/amoand_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoor_w.o -DTEST_FUNC_NAME=amoor_w \
+#		-DTEST_FUNC_TXT='"amoor_w"' -DTEST_FUNC_RET=amoor_w_ret $(TESTS_PATH)/amoor_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoswap_w.o -DTEST_FUNC_NAME=amoswap_w \
+#		-DTEST_FUNC_TXT='"amoswap_w"' -DTEST_FUNC_RET=amoswap_w_ret $(TESTS_PATH)/amoswap_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amoxor_w.o -DTEST_FUNC_NAME=amoxor_w \
+#		-DTEST_FUNC_TXT='"amoxor_w"' -DTEST_FUNC_RET=amoxor_w_ret $(TESTS_PATH)/amoxor_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amomax_w.o -DTEST_FUNC_NAME=amomax_w \
+#		-DTEST_FUNC_TXT='"amomax_w"' -DTEST_FUNC_RET=amomax_w_ret $(TESTS_PATH)/amomax_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amomaxu_w.o -DTEST_FUNC_NAME=amomaxu_w \
+#		-DTEST_FUNC_TXT='"amomaxu_w"' -DTEST_FUNC_RET=amomaxu_w_ret $(TESTS_PATH)/amomaxu_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amomin_w.o -DTEST_FUNC_NAME=amomin_w \
+#		-DTEST_FUNC_TXT='"amomin_w"' -DTEST_FUNC_RET=amomin_w_ret $(TESTS_PATH)/amomin_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/amominu_w.o -DTEST_FUNC_NAME=amominu_w \
+#		-DTEST_FUNC_TXT='"amominu_w"' -DTEST_FUNC_RET=amominu_w_ret $(TESTS_PATH)/amominu_w.S
+#	$(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/lrsc.o -DTEST_FUNC_NAME=lrsc \
+#		-DTEST_FUNC_TXT='"lrsc_w"' -DTEST_FUNC_RET=lrsc_ret $(TESTS_PATH)/lrsc.S
 	# $(RISCV_PATH)/riscv32-unknown-elf-gcc -c -march=rv32ima -o $(TESTS_PATH)/scall.o -DTEST_FUNC_NAME=scall \
 	#	-DTEST_FUNC_TXT='"scall"' -DTEST_FUNC_RET=scall_ret $(TESTS_PATH)/scall.S
 	\

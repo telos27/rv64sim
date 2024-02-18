@@ -18,16 +18,14 @@
 	.text;				\
 	.global TEST_FUNC_NAME;		\
 	.global TEST_FUNC_RET;		\
-	.global uart_putchar;	\
 TEST_FUNC_NAME:				\
-	la sp, 0x800fffff;		\
+	la sp, 0x8000ffff;		\
 	sw ra, (sp);			\
 	lui	a3,%hi(.test_name);	\
 	addi a3,a3,%lo(.test_name);	\
 .prname_next:				\
 	lb	a0,0(a3);		\
 	beq	a0,zero,.prname_done;	\
-	jal uart_putchar;	\
 	addi	a3,a3,1;		\
 	jal	zero,.prname_next;	\
 .test_name:				\
@@ -36,8 +34,6 @@ TEST_FUNC_NAME:				\
 	.balign 4, 0;			\
 .prname_done:				\
 	addi	a0,zero,'.';		\
-	jal uart_putchar;		\
-	jal uart_putchar;		\
 	lw ra, (sp);			\
 	//sw	a1,0(a2);		\
 	//sw	a1,0(a2);
@@ -45,16 +41,12 @@ TEST_FUNC_NAME:				\
 	//lui	a2,0x10000000>>12;	\
 
 #define RVTEST_PASS			\
-	la sp, 0x800fffff;		\
+	la sp, 0x8000ffff;		\
 	sw ra, (sp);			\
 	addi a0, zero, 'o';		\
-	jal uart_putchar;		\
 	addi a0, zero, 'k';		\
-	jal uart_putchar;		\
 	addi a0, zero, '\r';	\
-	jal uart_putchar;		\
 	addi a0, zero, '\n';	\
-	jal uart_putchar;		\
 	lw ra, (sp);			\
 	jal zero, TEST_FUNC_RET;
 	//lui	a0,0x10000000>>12;	\
@@ -67,22 +59,16 @@ TEST_FUNC_NAME:				\
 	jal	zero,TEST_FUNC_RET;
 
 #define RVTEST_FAIL			\
-	la sp, 0x800fffff;		\
+	la sp, 0x8000ffff;		\
 	sw ra, (sp);			\
+	li x30, 0xdeadbeef;		\
 	addi a0, zero, 'e';		\
-	jal uart_putchar;		\
 	addi a0, zero, 'r';		\
-	jal uart_putchar;		\
 	addi a0, zero, 'r';		\
-	jal uart_putchar;		\
 	addi a0, zero, 'o';		\
-	jal uart_putchar;		\
 	addi a0, zero, 'r';		\
-	jal uart_putchar;		\
 	addi a0, zero, '\r';	\
-	jal uart_putchar;		\
 	addi a0, zero, '\n';	\
-	jal uart_putchar;		\
 	lw ra, (sp);			\
 	jal zero, TEST_FUNC_RET;
 	//lui	a0,0x10000000>>12;	\
