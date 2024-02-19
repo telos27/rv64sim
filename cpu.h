@@ -68,20 +68,3 @@ extern int execute_code();
 
 
 
-// Modify the compression instruction 
-
-uint32_t c_nop(uint32_t instr, uint32_t opcode, uint32_t sub);
-uint32_t cpress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub);         //one
-uint32_t cpress_cjl(uint32_t instr, uint32_t opcode, uint32_t sub);          //two
-uint32_t cpress_cbe(uint32_t instr, uint32_t opcode, uint32_t sub);          //thr
-uint32_t cpress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub);         //four
-uint32_t cpress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub);        //five
-uint32_t cpress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub);         //six
-uint32_t  execute_cpress_instruction(uint32_t instr);
-typedef int (*FuncPtr)(uint32_t, uint32_t, uint32_t); 
-FuncPtr excute_press_instr[32];
-extern void cpress_init();
-#define OPCODE_C_MASK 0x03    // bits [1:0]
-#define OPCODE_C_SHIFT 0
-#define FUNCT3_C_MASK 0xe000    // bits [15:13]
-#define FUNCT3_C_SHIFT 0x0d

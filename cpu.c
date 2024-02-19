@@ -165,8 +165,29 @@ static reg_type interrupt;  // interrupt type
 
 static unsigned int trace = 0;  // trace every instruction
 
+typedef int (*FuncPtr)(uint32_t, uint32_t, uint32_t);
+FuncPtr execute_compress_instr[32];
 
-static unsigned int cpress;         //the compression instruction
+
+
+// Modify the compression instruction 
+uint32_t compress_nop(uint32_t instr, uint32_t opcode, uint32_t sub);
+uint32_t compress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub);         //one
+uint32_t compress_cjl(uint32_t instr, uint32_t opcode, uint32_t sub);          //two
+uint32_t compress_cbe(uint32_t instr, uint32_t opcode, uint32_t sub);          //thr
+uint32_t compress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub);         //four
+uint32_t compress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub);        //five
+uint32_t compress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub);         //six
+uint32_t  execute_compress_instruction(uint32_t instr);
+void compress_init();
+
+#define OPCODE_C_MASK 0x03    // bits [1:0]
+#define OPCODE_C_SHIFT 0
+#define FUNCT3_C_MASK 0xe000    // bits [15:13]
+#define FUNCT3_C_SHIFT 0x0d
+
+static unsigned int is_compress;         // is a compressed instruction
+
 // read register
 // can optimize by always 0 in x0
 reg_type read_reg(int reg_no)
@@ -713,7 +734,7 @@ reg_type branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned i
 // JAL opcode: returns next PC
 reg_type jal_op(int rd, unsigned int imm)
 {
-    if(cpress == 0) write_reg(rd, pc + 4);                          //the compression instruction
+    if(is_compress == 0) write_reg(rd, pc + 4);                          //the compression instruction
     else write_reg(rd, pc + 2);
     // NOTE: bit position, add 0 bit , sign extend
     reg_type ret = pc + sign_extend(((imm & 0x80000) | ((imm & 0xff) << 11) | 
@@ -728,7 +749,7 @@ reg_type jalr_op(int rd, int rs1, unsigned int imm12)
 {
     // NOTE: write register afterwards, rd could be same as rs1
     reg_type saved_pc;
-    if(cpress == 0) saved_pc = pc + 4;                              //the compression instruction
+    if(is_compress == 0) saved_pc = pc + 4;                              //the compression instruction
     else saved_pc = pc + 2;
     // NOTE: sign extend , zero LSB
     reg_type ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & 0xfffffffe;
@@ -991,10 +1012,10 @@ reg_type execute_one_instruction()
     }
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
-    cpress = 0;
+    is_compress = 0;
     if((instr&0x03)!=0x03){
-        instr =  execute_cpress_instruction(instr);                 // Modify the compression instruction Check if the lower 2 bits are not all set to 1 (indicating a compressed instruction) 
-        if(instr != 0xff) cpress = 1;                               //if instr == 0xff invalid
+        instr =  execute_compress_instruction(instr);                 // Modify the compression instruction Check if the lower 2 bits are not all set to 1 (indicating a compressed instruction) 
+        if(instr != 0xff) is_compress = 1;                               //if instr == 0xff invalid
     }
     // decode instruction
     opcode = (instr & OPCODE_MASK) >> OPCODE_SHIFT;
@@ -1040,9 +1061,8 @@ reg_type execute_one_instruction()
 #endif
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
-    if (next_pc == -1) {
-        if(cpress != 1)next_pc = pc + 4;    // next instruction if there is no jump
-        else next_pc = pc + 2;         // compression instruction
+    if (next_pc == -1) {    // no jump, execute next instruction
+        next_pc = pc + (is_compress ? 2 : 4);
     }
     return next_pc;
 }
@@ -1168,17 +1188,17 @@ int init_cpu(reg_type start_pc)
     pc = start_pc ;
     mode = MODE_M; // Machine-mode.
     no_cycles = 0;
-    cpress_init();
+    compress_init();
     return 0;
 }
 
 
 // Modify the compression instruction
-uint32_t c_nop(uint32_t instr, uint32_t opcode, uint32_t sub)
+uint32_t compress_nop(uint32_t instr, uint32_t opcode, uint32_t sub)
 {
     return instr;
 }
-uint32_t cpress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub)         //one
+uint32_t compress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub)         //one
 {
     //c.lw  c.sw  c.swsp,  c.lwsp
     uint32_t nstr, uimm, rd, rs1, rs2, uimml5, uimmh7;
@@ -1230,7 +1250,7 @@ uint32_t cpress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub)         //on
     }
     return nstr;
 }
-uint32_t cpress_cjl(uint32_t instr, uint32_t opcode, uint32_t sub)          //two
+uint32_t compress_cjl(uint32_t instr, uint32_t opcode, uint32_t sub)          //two
 {
     //c.jal, c.j
     uint32_t nstr, imm, rd;
@@ -1251,7 +1271,7 @@ uint32_t cpress_cjl(uint32_t instr, uint32_t opcode, uint32_t sub)          //tw
     nstr = ((imm & 0x100000) << 11) | ((imm & 0x7fe) << 20) | ((imm & 0x800) << 9) | (imm & 0xff000) | (rd << 7) | 0x6f;
     return nstr;
 }
-uint32_t cpress_cbe(uint32_t instr, uint32_t opcode, uint32_t sub)          //thr
+uint32_t compress_cbe(uint32_t instr, uint32_t opcode, uint32_t sub)          //thr
 {
     //c.beqz,  c.bnez
     uint32_t nstr, imm, rd, rs1,rs2;
@@ -1274,7 +1294,7 @@ uint32_t cpress_cbe(uint32_t instr, uint32_t opcode, uint32_t sub)          //th
     nstr = (((imm & 0x1000) << 19) | ((imm & 0x07e0) << 20) | (rs1 << 15) | (rd << 12) | ((imm & 0x1e) << 7) | ((imm & 0x800) >> 4) | 0x63);
     return nstr;
 }
-uint32_t cpress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub)         //four
+uint32_t compress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub)         //four
 {
     //c.addi, c.li, c.and, c.or, c.xor, c.sub, c.srli, c.srai, c.andi, c.slli
     uint32_t nstr, opd, func, rs1, rd, rs2d5, immh7,imm,num;
@@ -1371,7 +1391,7 @@ uint32_t cpress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub)         //f
     return nstr;
 }
 
-uint32_t cpress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub)        //five
+uint32_t compress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub)        //five
 {
     uint32_t nstr, opd, rd, rs1, func, imm;
 
@@ -1412,7 +1432,7 @@ uint32_t cpress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub)        //fi
     return nstr;
 }
 
-uint32_t cpress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub)          //six
+uint32_t compress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub)          //six
 {
     //c.mv,  c.add,  c.jalr,  c.ebreak
     uint32_t nstr,  rd, rs2, rs1,opd;
@@ -1455,51 +1475,51 @@ uint32_t cpress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub)          //s
 }
 
 
-void cpress_init(void)
+void compress_init(void)
 {
-    excute_press_instr[0] = cpress_adlui;                       
-    excute_press_instr[1] = cpress_caoxd;                      
-    excute_press_instr[2] = cpress_caoxd;                      
-    excute_press_instr[3] = c_nop;                             
-    excute_press_instr[4] = c_nop;                       
-    excute_press_instr[5] = cpress_cjl;                          
-    excute_press_instr[6] = c_nop;                           
-    excute_press_instr[7] = c_nop;                 
+    execute_compress_instr[0] = compress_adlui;                       
+    execute_compress_instr[1] = compress_caoxd;                      
+    execute_compress_instr[2] = compress_caoxd;                      
+    execute_compress_instr[3] = compress_nop;                             
+    execute_compress_instr[4] = compress_nop;                       
+    execute_compress_instr[5] = compress_cjl;                          
+    execute_compress_instr[6] = compress_nop;                           
+    execute_compress_instr[7] = compress_nop;                 
 
-    excute_press_instr[8] = cpress_clsw;
-    excute_press_instr[9] = cpress_caoxd;
-    excute_press_instr[10] = cpress_clsw;
-    excute_press_instr[11] = c_nop;
-    excute_press_instr[12] = c_nop;                       
-    excute_press_instr[13] = cpress_adlui;
-    excute_press_instr[14] = c_nop;                           
-    excute_press_instr[15] = c_nop;          
+    execute_compress_instr[8] = compress_clsw;
+    execute_compress_instr[9] = compress_caoxd;
+    execute_compress_instr[10] = compress_clsw;
+    execute_compress_instr[11] = compress_nop;
+    execute_compress_instr[12] = compress_nop;                       
+    execute_compress_instr[13] = compress_adlui;
+    execute_compress_instr[14] = compress_nop;                           
+    execute_compress_instr[15] = compress_nop;          
 
-    excute_press_instr[16] = c_nop;
-    excute_press_instr[17] = cpress_caoxd;
-    excute_press_instr[18] = cpress_adjr;
-    excute_press_instr[19] = c_nop;                            
-    excute_press_instr[20] = c_nop;                      
-    excute_press_instr[21] = cpress_cjl;                           
-    excute_press_instr[22] = c_nop;                          
-    excute_press_instr[23] = c_nop;        
+    execute_compress_instr[16] = compress_nop;
+    execute_compress_instr[17] = compress_caoxd;
+    execute_compress_instr[18] = compress_adjr;
+    execute_compress_instr[19] = compress_nop;                            
+    execute_compress_instr[20] = compress_nop;                      
+    execute_compress_instr[21] = compress_cjl;                           
+    execute_compress_instr[22] = compress_nop;                          
+    execute_compress_instr[23] = compress_nop;        
 
-    excute_press_instr[24] = cpress_clsw;
-    excute_press_instr[25] = cpress_cbe;
-    excute_press_instr[26] = cpress_clsw;
-    excute_press_instr[27] = c_nop;
-    excute_press_instr[28] = c_nop;                      
-    excute_press_instr[29] = cpress_cbe;
-    excute_press_instr[30] = c_nop;                            
-    excute_press_instr[31] = c_nop;    
+    execute_compress_instr[24] = compress_clsw;
+    execute_compress_instr[25] = compress_cbe;
+    execute_compress_instr[26] = compress_clsw;
+    execute_compress_instr[27] = compress_nop;
+    execute_compress_instr[28] = compress_nop;                      
+    execute_compress_instr[29] = compress_cbe;
+    execute_compress_instr[30] = compress_nop;                            
+    execute_compress_instr[31] = compress_nop;    
 }
 
-uint32_t execute_cpress_instruction(uint32_t instr)
+uint32_t execute_compress_instruction(uint32_t instr)
  {
     uint32_t cinstr,opcode, sub3;    
 
     opcode = (instr & OPCODE_C_MASK) >> OPCODE_C_SHIFT;
     sub3 = (((instr & FUNCT3_C_MASK) >> FUNCT3_C_SHIFT)<<2);
     cinstr = opcode+sub3;
-    return excute_press_instr[cinstr](instr,opcode,(sub3>>2));
+    return execute_compress_instr[cinstr](instr,opcode,(sub3>>2));
  }
