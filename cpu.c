@@ -166,6 +166,7 @@ static reg_type interrupt;  // interrupt type
 static unsigned int trace = 0;  // trace every instruction
 
 
+static unsigned int cpress;         //the compression instruction
 // read register
 // can optimize by always 0 in x0
 reg_type read_reg(int reg_no)
@@ -712,7 +713,8 @@ reg_type branch_op(int rs1 , int rs2 , int sub3 , unsigned int imm5 , unsigned i
 // JAL opcode: returns next PC
 reg_type jal_op(int rd, unsigned int imm)
 {
-    write_reg(rd, pc + 4);
+    if(cpress == 0) write_reg(rd, pc + 4);                          //the compression instruction
+    else write_reg(rd, pc + 2);
     // NOTE: bit position, add 0 bit , sign extend
     reg_type ret = pc + sign_extend(((imm & 0x80000) | ((imm & 0xff) << 11) | 
         ((imm & 0x100) << 2) | ((imm & 0x7fe00) >> 9))<<1, 21);
@@ -725,7 +727,9 @@ reg_type jal_op(int rd, unsigned int imm)
 reg_type jalr_op(int rd, int rs1, unsigned int imm12)
 {
     // NOTE: write register afterwards, rd could be same as rs1
-    reg_type saved_pc = pc + 4;
+    reg_type saved_pc;
+    if(cpress == 0) saved_pc = pc + 4;                              //the compression instruction
+    else saved_pc = pc + 2;
     // NOTE: sign extend , zero LSB
     reg_type ret =  (read_reg(rs1) + sign_extend(imm12, 12)) & 0xfffffffe;
     //printf("JALR: pc=%x , rd=%x , rs1=%x , imm12=%x , next=%x\n", pc , rd, rs1, imm12 ,  ret);
@@ -981,14 +985,17 @@ reg_type execute_one_instruction()
  //   if (pc == 0x800017c4) DebugBreak();
 
     // fetch instruction 
-    if ((pc & 0x3) != 0) {
+    if ((pc & 0x01) != 0) {
         interrupt = INTR_INSTR_MISALIGN;
         return 1;
     }
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
-   // printf("pc=0x%lx , instr=0x%x\n", pc, instr);
-
+    cpress = 0;
+    if((instr&0x03)!=0x03){
+        instr =  execute_cpress_instruction(instr);                 // Modify the compression instruction Check if the lower 2 bits are not all set to 1 (indicating a compressed instruction) 
+        if(instr != 0xff) cpress = 1;                               //if instr == 0xff invalid
+    }
     // decode instruction
     opcode = (instr & OPCODE_MASK) >> OPCODE_SHIFT;
     sub3 = (instr & FUNCT3_MASK) >> FUNCT3_SHIFT;
@@ -1033,9 +1040,10 @@ reg_type execute_one_instruction()
 #endif
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
-
-   // printf("cycle=%ld , pc=0x%x , x31=0x%x\n", no_cycles, pc, regs[31]);
-    if (next_pc == -1) next_pc = pc + 4;    // next instruction if there is no jump
+    if (next_pc == -1) {
+        if(cpress != 1)next_pc = pc + 4;    // next instruction if there is no jump
+        else next_pc = pc + 2;         // compression instruction
+    }
     return next_pc;
 }
 
@@ -1160,5 +1168,338 @@ int init_cpu(reg_type start_pc)
     pc = start_pc ;
     mode = MODE_M; // Machine-mode.
     no_cycles = 0;
+    cpress_init();
     return 0;
 }
+
+
+// Modify the compression instruction
+uint32_t c_nop(uint32_t instr, uint32_t opcode, uint32_t sub)
+{
+    return instr;
+}
+uint32_t cpress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub)         //one
+{
+    //c.lw  c.sw  c.swsp,  c.lwsp
+    uint32_t nstr, uimm, rd, rs1, rs2, uimml5, uimmh7;
+    nstr = 0xff;
+    switch (sub) {
+    case 0x02:
+        switch (opcode) {
+        case 0x02:          //211 c.lwsp
+            uimm = (((instr & 0x0c) << 2) | ((instr & 0x1000) >> 9) | ((instr & 0x70) >> 4))<<2;
+            rs1 = 2;
+            rd = (instr >> 7) & 0x1f;
+            if (rd == 0) return nstr;         //rd=0 Invalid instruction
+            break;
+        case 0x00:          //213 c.lw
+            uimm = (((instr & 0x20) >> 1) | ((instr & 0x1c00) >> 9) | ((instr & 0x40) >> 6)) << 2;
+            rs1 = ((instr >> 7) & 0x07) + 8;
+            rd = ((instr >> 2) & 0x07) + 8;
+            break;
+        default:
+            return nstr;
+        }
+        nstr = (uimm << 20) + (rs1 << 15) + (0x02 << 12) + (rd << 7) + 0x03;
+        break;
+    case 0x06:
+        switch (opcode) {
+        case 0x00:      //214 c.sw
+            uimm = (((instr & 0x20) >> 1) | ((instr & 0x1c00) >> 9) | ((instr & 0x40) >> 6)) << 2;
+            uimml5 = (uimm & 0x1f);
+            uimmh7 = ((uimm >> 5) & 0x7f);
+            //uimml5 = ((((instr & 0x0c00) >> 10) << 1) + ((instr & 0x40) >> 6)) << 2;
+            //uimmh7 = ((((instr & 0x20) >> 5)<<1) + ((instr & 0x1000) >> 12));
+            rs1 = ((instr & 0x0380) >> 7) + 8;
+            rs2 = ((instr & 0x1c) >> 2) + 8;
+            break;
+        case 0x02:      //212 c.swsp
+            uimm = (((instr & 0x0180) >> 3) | ((instr & 0x1e00) >> 9)) << 2;
+            uimml5 = uimm & 0x1f;
+            uimmh7 = ((uimm >> 5) & 0x7f);
+            rs1 = 2;
+            rs2 = (instr & 0x7c) >> 2;
+            break;
+        default:
+            return nstr;
+        }
+        nstr = (uimmh7 << 25) + (rs2 << 20) + (rs1 << 15) + (0x02 << 12) + (uimml5 << 7) + 0x23;
+        break;
+    default:
+        return nstr;        /* Invalid instruction */
+    }
+    return nstr;
+}
+uint32_t cpress_cjl(uint32_t instr, uint32_t opcode, uint32_t sub)          //two
+{
+    //c.jal, c.j
+    uint32_t nstr, imm, rd;
+    nstr = 0xff;
+    switch (sub) {
+    case 0x05:      //221 c.j
+        rd = 0;
+        break;
+    case 0x01:      //222 c.jal
+        rd = 1;
+        break;
+    default:
+        return nstr;        /* Invalid instruction */
+    }
+                    //b11                        b10                      b98                        b7               b6                              b5              b4                      b321
+    imm = ((((instr & 0x1000) >> 2) | ((instr & 0x0100) << 1) | ((instr & 0x0600) >> 2) | (instr & 0x40) | ((instr & 0x80) >> 2) | ((instr & 0x04) << 2) | ((instr & 0x0800) >> 8) | (instr & 0x38) >> 3)) << 1;
+    imm = sign_extend(imm, 12);
+    nstr = ((imm & 0x100000) << 11) | ((imm & 0x7fe) << 20) | ((imm & 0x800) << 9) | (imm & 0xff000) | (rd << 7) | 0x6f;
+    return nstr;
+}
+uint32_t cpress_cbe(uint32_t instr, uint32_t opcode, uint32_t sub)          //thr
+{
+    //c.beqz,  c.bnez
+    uint32_t nstr, imm, rd, rs1,rs2;
+    nstr = 0xff;
+    switch (sub) {
+    case 0x06:      //231 c.beqz
+        rd = 0;
+        break;
+    case 0x07:      //232 c.bnez
+        rd = 1;
+        break;
+    default:
+        return nstr;        /* Invalid instruction */
+    }
+    rs2 = 0;
+    rs1 = ((instr & 0x380) >> 7) + 8;
+    imm = (((instr & 0x1000) >> 5) | (instr & 0x60) | ((instr & 0x04) << 2) | ((instr & 0x0c00) >> 8) | ((instr & 0x18) >> 3)) << 1;
+    imm = sign_extend(imm, 9);
+    nstr = 0;
+    nstr = (((imm & 0x1000) << 19) | ((imm & 0x07e0) << 20) | (rs1 << 15) | (rd << 12) | ((imm & 0x1e) << 7) | ((imm & 0x800) >> 4) | 0x63);
+    return nstr;
+}
+uint32_t cpress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub)         //four
+{
+    //c.addi, c.li, c.and, c.or, c.xor, c.sub, c.srli, c.srai, c.andi, c.slli
+    uint32_t nstr, opd, func, rs1, rd, rs2d5, immh7,imm,num;
+    nstr = 0xff;
+    if ((opcode == 0x01) && (sub == 0x04)) {
+        if ((instr & 0x0c00) == 0x0c00) {                              //2412c.and, 2413c.or,2414 c.xor, 2415c.sub
+            opd = 0x33;
+            rd = ((instr & 0x380) >> 7) + 8;
+            rs1 = rd;
+            rs2d5 = ((instr & 0x1c) >> 2)+8;
+            immh7 = 0;
+            num = (instr & 0x60) >> 5;
+            if (num == 0) {                                 //c.sub
+                immh7 = 0x20;
+                func = 0;
+            }   
+            else if (num == 1) {                            //c.xor
+                func = 0x04;
+            }
+            else if (num == 2) {                            //c.or
+                func = 0x06;
+            }
+            else {
+                func = 0x07;                                //c.and
+            }
+        } else {                                                        //247c.srli, 248c.srai, 249c.andi
+            imm = ((instr & 0x1000) >> 7) | ((instr & 0x7c) >> 2);
+            rd = ((instr & 0x380) >> 7) + 8;
+            num = (instr & 0x0c00) >> 10;
+            if (num == 0) {                 //c.srli
+                if (((instr & 0x1000) >> 7) == 1) {
+                    while (1);
+                }
+                rs1 = rd;
+                func = 0x05;
+                opd = 0x13;
+                immh7 = 0;
+                rs2d5 = (imm & 0x1f);
+            }
+            else if (num == 1) {            //c.srai
+                if (((instr & 0x1000) >> 7) == 1) {
+                    while (1);
+                }
+                rs1 = rd;
+                func = 0x05;
+                opd = 0x13;
+                immh7 = 0x20;
+                rs2d5 = (imm & 0x1f);
+            }
+            else if (num == 2) {            //c.andi
+                imm = sign_extend(imm, 6);
+                rs1 = rd;
+                func = 0x07;
+                opd = 0x13;
+                immh7 = (imm & 0xfe0) >> 5;
+                rs2d5 = (imm & 0x1f);
+            }
+            else return nstr;
+        }
+    }
+    else if ((opcode == 0x02) && (sub == 0)) {                          //246 c.slli
+        if (((instr & 0x1000) >> 7) == 1) {
+            while (1);
+        }
+        imm = ((instr & 0x1000) >> 7) | ((instr & 0x7c) >> 2);
+        rd = (instr & 0xf80) >> 7;
+        rs1 = rd;
+        func = 1;
+        opd = 0x13;
+        immh7 = 0;
+        rs2d5 = imm & 0x1f;
+    }else if ((opcode == 0x01) && (sub == 0)) {                                              //243 c.addi
+        imm = ((instr & 0x1000) >> 7) | ((instr & 0x7c) >> 2);
+        imm = sign_extend(imm, 6);
+        rd = (instr & 0xf80) >> 7;
+        rs1 = rd;
+        func = 0;
+        opd = 0x13;
+        immh7 = (imm&0xfe0)>>5;
+        rs2d5 = imm & 0x1f;
+    }else if ((opcode == 0x01) & (sub == 0x02)) {                                           //241 c.li
+        imm = ((instr & 0x1000) >> 7) | ((instr & 0x7c) >> 2);
+        imm = sign_extend(imm, 6);
+        rd = (instr & 0xf80) >> 7;
+        rs1 = 0;
+        func = 0;
+        opd = 0x13;
+        immh7 = (imm & 0xfe0) >> 5;
+        rs2d5 = imm & 0x1f;
+    }else {                                         //invalid instruction
+        return nstr;
+    }
+    nstr = ((immh7 << 25) | (rs2d5 << 20) | (rs1 << 15) | (func << 12) | (rd << 7) | opd);
+    return nstr;
+}
+
+uint32_t cpress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub)        //five
+{
+    uint32_t nstr, opd, rd, rs1, func, imm;
+
+    nstr = 0xff;
+    //c.addi4sp, c.addi16sp, c.lui
+    if ((opcode == 0) && (sub == 0)) {                          //245 c.addi4spn
+        if ((instr & 0x1fe0) == 0) return nstr;                 //imm==0 invalid
+        rd = ((instr & 0x1c) >> 2) + 8;
+        rs1 = 2;
+        func = 0;
+        imm = (((instr & 0x0780) >> 3) | ((instr & 0x1800) >> 9) | ((instr & 0x20) >> 4) | ((instr & 0x40) >> 6)) << 2;
+        opd = 0x13;
+            nstr = (((imm & 0xfff) << 20) | (rs1 << 15) | (func << 12) | (rd << 7) | (opd));
+            return nstr;
+    }else if ((opcode == 0x01) && (sub == 3)) {                       
+        if (((instr & 0x1000) == 0) && ((instr & 0x007c) == 0)) return nstr;            //imm==0 invalid
+        if ((instr & 0xf80) == 0x100) {                          //244 c.addi16sp
+            rd = 2;
+            rs1 = 2;
+            func = 0;
+            imm = (((instr & 0x1000) >> 7) | (instr & 0x18) | ((instr & 0x20) >> 3) | ((instr & 0x04) >> 1) | ((instr&0x40) >> 6))<<4;
+            imm = sign_extend(imm, 10);
+            opd = 0x13;
+
+            nstr = (((imm & 0xfff) << 20) | (rs1 << 15) | (func << 12) | (rd << 7) | (opd));
+            return nstr;
+        }
+        else {                                                  //242 c.lui  
+            opd = 0x37;
+            rd = (instr & 0x0f80) >> 7;
+            imm = (((instr & 0x1000) >> 7) | ((instr & 0x7c) >> 2)) << 12;
+            if (imm == 0) return nstr;                          //imm == 0 invalid
+            imm = sign_extend(imm, 18);
+            nstr = ((imm & 0xfffff000) | (rd << 7) | (opd));
+            return nstr;
+        }
+    }
+    return nstr;
+}
+
+uint32_t cpress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub)          //six
+{
+    //c.mv,  c.add,  c.jalr,  c.ebreak
+    uint32_t nstr,  rd, rs2, rs1,opd;
+    nstr = 0xff;
+    if ((instr&0xffff) == 0x9002) return 0x00100073;                     //ebreak命令
+    if ((opcode != 0x02) || (sub != 0x04)) return nstr;         //Invalid instruction
+    rs2 = (instr & 0x007c) >> 2;
+    rd = (instr & 0x0f80) >> 7;
+    if ((instr & 0x1000)) {
+        //2411 c.add, 223 c.jalr
+        if (rs2) {                          //2411 c.add
+            if (rd == 0) return nstr;
+            rs1 = rd;
+            opd = 0x33;
+        }
+        else {                              //223 c.jalr
+            rs1 = rd;
+            if (rs1 == 0) return nstr;
+            rd = 1;
+            opd = 0x67;
+        }
+    }
+    else {
+                                            //2410 c.mv
+        if (rs2 != 0) {
+            rd = (instr & 0x0f80) >> 7;
+            rs1 = 0;
+            opd = 0x33;
+        }
+        else {                             //c.jr == 223 c.jalr
+            rs1 = rd;
+            if (rs1 == 0) return nstr;
+            rs2 = 0;
+            rd = 0;
+            opd = 0x67;
+        }
+    }
+    nstr = ((rs2 << 20) | (rs1 << 15) | (rd << 7) | opd);
+    return nstr;
+}
+
+
+void cpress_init(void)
+{
+    excute_press_instr[0] = cpress_adlui;                       
+    excute_press_instr[1] = cpress_caoxd;                      
+    excute_press_instr[2] = cpress_caoxd;                      
+    excute_press_instr[3] = c_nop;                             
+    excute_press_instr[4] = c_nop;                       
+    excute_press_instr[5] = cpress_cjl;                          
+    excute_press_instr[6] = c_nop;                           
+    excute_press_instr[7] = c_nop;                 
+
+    excute_press_instr[8] = cpress_clsw;
+    excute_press_instr[9] = cpress_caoxd;
+    excute_press_instr[10] = cpress_clsw;
+    excute_press_instr[11] = c_nop;
+    excute_press_instr[12] = c_nop;                       
+    excute_press_instr[13] = cpress_adlui;
+    excute_press_instr[14] = c_nop;                           
+    excute_press_instr[15] = c_nop;          
+
+    excute_press_instr[16] = c_nop;
+    excute_press_instr[17] = cpress_caoxd;
+    excute_press_instr[18] = cpress_adjr;
+    excute_press_instr[19] = c_nop;                            
+    excute_press_instr[20] = c_nop;                      
+    excute_press_instr[21] = cpress_cjl;                           
+    excute_press_instr[22] = c_nop;                          
+    excute_press_instr[23] = c_nop;        
+
+    excute_press_instr[24] = cpress_clsw;
+    excute_press_instr[25] = cpress_cbe;
+    excute_press_instr[26] = cpress_clsw;
+    excute_press_instr[27] = c_nop;
+    excute_press_instr[28] = c_nop;                      
+    excute_press_instr[29] = cpress_cbe;
+    excute_press_instr[30] = c_nop;                            
+    excute_press_instr[31] = c_nop;    
+}
+
+uint32_t execute_cpress_instruction(uint32_t instr)
+ {
+    uint32_t cinstr,opcode, sub3;    
+
+    opcode = (instr & OPCODE_C_MASK) >> OPCODE_C_SHIFT;
+    sub3 = (((instr & FUNCT3_C_MASK) >> FUNCT3_C_SHIFT)<<2);
+    cinstr = opcode+sub3;
+    return excute_press_instr[cinstr](instr,opcode,(sub3>>2));
+ }
