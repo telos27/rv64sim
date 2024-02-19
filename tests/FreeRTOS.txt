@@ -1,0 +1,7 @@
+Using FreeRTOS (32-bit)
+
+* download FreeRTOS
+* modify FreeRTOS/Demo/RISC-V_RV32_QEMU_VIRT_GCC/main.c to use direct interrupt mode (line 77)
+* modify Makefile to use 32-bit toolchain (64-bit toolchain not working yet although it should)
+
+* qemu.sh can be used to run FreeRTOS under qemu
