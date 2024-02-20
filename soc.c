@@ -401,7 +401,7 @@ uint32_t io_write(reg_type addr, reg_type* data)
 #endif
 		// emulate UART behavior; LCR and FCR write should be ok
 		case IO_UART_DATA: printf("%c", (int)*data); fflush(stdout); break ;
-		case IO_UART_INTRENABLE: uart_interrupt = (uint32_t)*data;	printf("uart_interrupt=%d\n", uart_interrupt); break;
+		case IO_UART_INTRENABLE: uart_interrupt = (uint32_t)*data; break;
 		case IO_UART_LINECTRL: break;
 
 		case IO_UART_FIFOCTRL: break;
