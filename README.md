@@ -1,6 +1,10 @@
 RISC-V emulator, supports both 32-bit and 64-bit (select via #define CONFIG_RV64)
 
-Currently only works on Windows, will support Linux/MacOS in the future.
+Currently work on Windows, Linux and MacOS.
+
+32-bit: RISC-V testsuite, FreeRTOS, no-MMU Linux
+64-bit: xv6
+
 
 Building xv6 on Linux:
 
