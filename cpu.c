@@ -543,6 +543,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
         default: interrupt = INT_ILLEGAL_INSTR ; // unknown sub3
         }
     } else { // MULDIV
+#ifdef CONFIG_M
         // NOTE: signedness, special cases for division/remainder of certain numbers
         reg_type n1 = read_reg(rs1);
         reg_type n2 = read_reg(rs2);
@@ -568,9 +569,14 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
             break;
         case REMU: result = (n2 == 0) ? n1 : (n1 % n2); break;
 
-        default: interrupt = INT_ILLEGAL_INSTR; break;  // unknown sub3
-        }
-        write_reg(rd, result);
+        default:
+#endif
+            interrupt = INT_ILLEGAL_INSTR;
+#ifdef CONFIG_M
+            break;  // unknown sub3
+       }
+       write_reg(rd, result);
+#endif
     }
     return TRUE;
 }
@@ -1012,6 +1018,11 @@ reg_type execute_one_instruction()
     }
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
+
+    if (trace) {
+        printf("cycle=%lld , pc=%llx: instr=%x\n", no_cycles, pc, instr);
+    }
+
     is_compress = 0;
     if((instr&0x03)!=0x03){
         instr =  execute_compress_instruction(instr);                 // Modify the compression instruction Check if the lower 2 bits are not all set to 1 (indicating a compressed instruction) 
@@ -1052,12 +1063,14 @@ reg_type execute_one_instruction()
     case OP_LUI: lui_op(rd, imm20);  break;
     case OP_ECALL: next_pc = ecall_op(sub3, sub7, rs1, rd, imm12); break;
     case OP_FENCEI: break; // TODO: don't need to anything until we have cache or pipeline
+#ifdef CONFIG_A
     case OP_A: 
 #ifdef CONFIG_RV64
         if (sub3 == AMO_D) atomic_op(sub7, rd, rs1, rs2); 
         else atomic32_op(sub7, rd, rs1, rs2); break;  // fault for other sub3
 #else
         atomic_op(sub7, rd, rs1, rs2); break;
+#endif
 #endif
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
@@ -1173,7 +1186,7 @@ int execute_code()
         if (interrupt==INTR_NONE) { 
             if (!wfi) next_pc = execute_one_instruction();    // does not change any state except for what is defined in the instruction
         }
-        if (interrupt!=INTR_NONE) {
+        if (interrupt!=INTR_NONE) {     // check for exceptions
             next_pc = execute_interrupt(interrupt);
         }
    
