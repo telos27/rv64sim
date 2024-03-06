@@ -5,7 +5,7 @@
 
 #include "cpu.h"
 #include "soc.h"
-
+#include "rv64sim.h"
 
 // instruction decoding： bitfields of an instruction; could use an array
 #define OPCODE_MASK 0x7f    // bits [6:0]
@@ -162,8 +162,6 @@ static reg_type reservation;   // address for lr/sc ; top 61/29 bits
 unsigned int wfi = 0;    // WFI flag 
 reg_type no_cycles; // execution cycles; currently always 1 cycle/instruction
 static reg_type interrupt;  // interrupt type
-
-static unsigned int trace = 0;  // trace every instruction
 
 typedef int (*FuncPtr)(uint32_t, uint32_t, uint32_t);
 FuncPtr execute_compress_instr[32];
@@ -1019,7 +1017,7 @@ reg_type execute_one_instruction()
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
 
-    if (trace) {
+    if (log_level & (1<<LOG_INSTR)) {
         printf("cycle=%lld , pc=%llx: instr=%x\n", no_cycles, pc, instr);
     }
 

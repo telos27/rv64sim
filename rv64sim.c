@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "rv64sim.h"
 #include "cpu.h"
 #include "soc.h"
 
@@ -15,7 +16,7 @@ static reg_type dtb_offset;    // offset to DTB
 char* bin_file_name = 0;
 char* dtb_file_name = 0;
 char* fs_file_name = 0;
-unsigned int log_level = 0;
+uint64_t log_level = 0;
 
 
 void usage(char *prog)
@@ -44,7 +45,7 @@ void init_args(int argc, char** argv)
                     break;
                 case 'l': 
                     if (i + 1 < argc) {
-                        log_level = atoi(argv[i + 1]);
+                        log_level = atol(argv[i + 1]);
                         i++;
                     }
                     break;
