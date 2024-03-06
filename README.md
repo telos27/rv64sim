@@ -6,6 +6,12 @@ Currently work on Windows, Linux and MacOS.
 
 64-bit: xv6
 
+Command-line arguments:
+  -b <bin file>: binary code to be executed
+  -d <dtb file>: dtb file for Linux
+  -f <filesystem file>: for virtio disk file
+  -l <log level>: each bit determines which type of info is logged
+
 
 Building xv6 on Linux:
 
@@ -19,4 +25,6 @@ Building xv6 on Linux:
   
 
   This will produce kernel/xv6.img and fs.img, which can be used as input to the emulator.
+
+
   
