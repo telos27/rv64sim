@@ -163,6 +163,9 @@ unsigned int wfi = 0;    // WFI flag
 reg_type no_cycles; // execution cycles; currently always 1 cycle/instruction
 static reg_type interrupt;  // interrupt type
 
+// count of # of instructions: C instructions are counted twice
+int no_instrs, no_A, no_M, no_C;
+
 typedef int (*FuncPtr)(uint32_t, uint32_t, uint32_t);
 FuncPtr execute_compress_instr[32];
 
@@ -543,6 +546,7 @@ int reg_op(int rd , int rs1 , int rs2 , int sub3 , int sub7)
     } else { // MULDIV
 #ifdef CONFIG_M
         // NOTE: signedness, special cases for division/remainder of certain numbers
+        no_M++;
         reg_type n1 = read_reg(rs1);
         reg_type n2 = read_reg(rs2);
         reg_type hi=0 , lo=0, result = 0;
@@ -617,6 +621,7 @@ int reg32_op(int rd, int rs1, int rs2, int sub3, int sub7)
         }
     }
     else { // MULDIV
+        no_M++;
         // NOTE: signedness, special cases for division/remainder of certain numbers
         uint32_t n1 = (uint32_t) read_reg(rs1);
         uint32_t n2 = (uint32_t) read_reg(rs2);
@@ -1016,15 +1021,18 @@ reg_type execute_one_instruction()
     }
     rw_memory(MEM_INSTR, pc, MEM_WORD, &mem_data);
     instr = (uint32_t) mem_data;
+    
+    no_instrs++;
 
     if (log_level & (1<<LOG_INSTR)) {
-        printf("cycle=%lld , pc=%llx: instr=%x\n", no_cycles, pc, instr);
+        printf("LOG: cycle=%lld , pc=%llx: instr=%x\n", no_cycles, pc, instr);
     }
 
     is_compress = 0;
     if((instr&0x03)!=0x03){
         instr =  execute_compress_instruction(instr);                 // Modify the compression instruction Check if the lower 2 bits are not all set to 1 (indicating a compressed instruction) 
         if(instr != 0xff) is_compress = 1;                               //if instr == 0xff invalid
+        no_C++;
     }
     // decode instruction
     opcode = (instr & OPCODE_MASK) >> OPCODE_SHIFT;
@@ -1069,6 +1077,7 @@ reg_type execute_one_instruction()
 #else
         atomic_op(sub7, rd, rs1, rs2); break;
 #endif
+        no_A++;
 #endif
     default: interrupt = INT_ILLEGAL_INSTR; break;  // invalid opcode
     }
@@ -1201,6 +1210,17 @@ int init_cpu(reg_type start_pc)
     no_cycles = 0;
     compress_init();
     return 0;
+}
+
+
+// Ctrl-C: CPU termination
+void terminate_cpu()
+{
+    fprintf(stderr, "Ctrl-C received, terminating\n");
+
+    if (log_level & (1<<LOG_INSTR_COUNT)) {
+        printf("instructions=%d; A=%d; M=%d; C=%d\n", no_instrs, no_A, no_M, no_C);
+    }
 }
 
 

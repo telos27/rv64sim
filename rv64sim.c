@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <signal.h>
 
 #include "rv64sim.h"
 #include "cpu.h"
@@ -65,9 +66,19 @@ void init_args(int argc, char** argv)
     }
 }
 
-// takes two optional argument: machine code file name & file system/dtb file name
+
+// SIGINT handler
+void sigint_handler(int sig)
+{
+    terminate_cpu();
+    exit(0);
+}
+
+
 int main(int argc, char** argv)
 {
+    signal(SIGINT, sigint_handler);
+
     init_args(argc, argv);
 
     init_soc();
