@@ -166,11 +166,6 @@ static reg_type interrupt;  // interrupt type
 // count of # of instructions: C instructions are counted twice
 int no_instrs, no_A, no_M, no_C;
 
-typedef int (*FuncPtr)(uint32_t, uint32_t, uint32_t);
-FuncPtr execute_compress_instr[32];
-
-
-
 // Modify the compression instruction 
 uint32_t compress_nop(uint32_t instr, uint32_t opcode, uint32_t sub);
 uint32_t compress_clsw(uint32_t instr, uint32_t opcode, uint32_t sub);         //one
@@ -180,7 +175,22 @@ uint32_t compress_caoxd(uint32_t instr, uint32_t opcode, uint32_t sub);         
 uint32_t compress_adlui(uint32_t instr, uint32_t opcode, uint32_t sub);        //five
 uint32_t compress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub);         //six
 uint32_t  execute_compress_instruction(uint32_t instr);
-void compress_init();
+
+
+typedef int (*FuncPtr)(uint32_t, uint32_t, uint32_t);
+FuncPtr execute_compress_instr[32] = {
+    compress_adlui, compress_caoxd, compress_caoxd, compress_nop,
+    compress_nop, compress_cjl, compress_nop, compress_nop,
+    compress_clsw, compress_caoxd, compress_clsw, compress_nop,
+    compress_nop, compress_adlui, compress_nop, compress_nop,
+    compress_nop, compress_caoxd, compress_adjr, compress_nop,
+    compress_nop, compress_cjl, compress_nop, compress_nop,
+    compress_clsw, compress_cbe, compress_clsw, compress_nop,
+    compress_nop, compress_cbe, compress_nop, compress_nop
+};
+
+
+
 
 #define OPCODE_C_MASK 0x03    // bits [1:0]
 #define OPCODE_C_SHIFT 0
@@ -1208,7 +1218,6 @@ int init_cpu(reg_type start_pc)
     pc = start_pc ;
     mode = MODE_M; // Machine-mode.
     no_cycles = 0;
-    compress_init();
     return 0;
 }
 
@@ -1505,45 +1514,6 @@ uint32_t compress_adjr(uint32_t instr, uint32_t opcode, uint32_t sub)          /
     return nstr;
 }
 
-
-void compress_init(void)
-{
-    execute_compress_instr[0] = compress_adlui;                       
-    execute_compress_instr[1] = compress_caoxd;                      
-    execute_compress_instr[2] = compress_caoxd;                      
-    execute_compress_instr[3] = compress_nop;                             
-    execute_compress_instr[4] = compress_nop;                       
-    execute_compress_instr[5] = compress_cjl;                          
-    execute_compress_instr[6] = compress_nop;                           
-    execute_compress_instr[7] = compress_nop;                 
-
-    execute_compress_instr[8] = compress_clsw;
-    execute_compress_instr[9] = compress_caoxd;
-    execute_compress_instr[10] = compress_clsw;
-    execute_compress_instr[11] = compress_nop;
-    execute_compress_instr[12] = compress_nop;                       
-    execute_compress_instr[13] = compress_adlui;
-    execute_compress_instr[14] = compress_nop;                           
-    execute_compress_instr[15] = compress_nop;          
-
-    execute_compress_instr[16] = compress_nop;
-    execute_compress_instr[17] = compress_caoxd;
-    execute_compress_instr[18] = compress_adjr;
-    execute_compress_instr[19] = compress_nop;                            
-    execute_compress_instr[20] = compress_nop;                      
-    execute_compress_instr[21] = compress_cjl;                           
-    execute_compress_instr[22] = compress_nop;                          
-    execute_compress_instr[23] = compress_nop;        
-
-    execute_compress_instr[24] = compress_clsw;
-    execute_compress_instr[25] = compress_cbe;
-    execute_compress_instr[26] = compress_clsw;
-    execute_compress_instr[27] = compress_nop;
-    execute_compress_instr[28] = compress_nop;                      
-    execute_compress_instr[29] = compress_cbe;
-    execute_compress_instr[30] = compress_nop;                            
-    execute_compress_instr[31] = compress_nop;    
-}
 
 uint32_t execute_compress_instruction(uint32_t instr)
  {
